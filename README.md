@@ -1,1 +1,1 @@
-# lai4wifi
+# Large AI for Wi-Fi
