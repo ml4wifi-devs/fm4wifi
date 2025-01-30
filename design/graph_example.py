@@ -1,11 +1,40 @@
+from dataclasses import dataclass, field
 import enum
+import jraph
 
 import networkx as nx
+import numpy as np
 
+import jax.numpy as jnp
+import jax
+
+import flax.linen as nn
+
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class Node:
+    type: jax.Array= field(default_factory=lambda :jnp.zeros(()))
+    tx_power: jax.Array= field(default_factory=lambda :jnp.zeros(()))
+    MCS: jax.Array= field(default_factory=lambda :jnp.zeros(()))
+    RSSI: jax.Array= field(default_factory=lambda :jnp.zeros(()))
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class Edge:
+    active: jax.Array= field(default_factory=lambda :jnp.zeros(()))
+    rate: jax.Array= field(default_factory=lambda :jnp.zeros(()))
+    RSSI: jax.Array= field(default_factory=lambda :jnp.zeros(()))
 
 class NodeType(enum.Enum):
     AP = 0
     STA = 1
+
+    def __jax_array__(self):
+        #return jnp.array(self.value)
+        return jax.nn.one_hot(jnp.array(self.value), len(type(self)))
 
 
 # main graph
@@ -146,3 +175,62 @@ target.nodes[5]['tx_power'] = 19.54
 target.nodes[5]['MCS'] = 9
 target.nodes[10]['tx_power'] = 13.64
 target.nodes[10]['MCS'] = 8
+
+# https://arxiv.org/pdf/2107.09422v1
+#https://github.com/google-deepmind/jraph/blob/master/jraph/ogb_examples/train_flax.py
+
+
+class Model(nn.Module):
+    @nn.compact
+    def __call__(self, x):
+        def make_embed_fn(latent_size):
+            @jraph.concatenated_args
+            def embed(inputs):
+                return nn.Dense(latent_size)(inputs)
+
+            return embed
+
+        homogeneous_graph = jraph.GraphMapFeatures(
+            embed_node_fn=make_embed_fn(32),
+            embed_edge_fn=make_embed_fn(32),
+        )(x)
+        return homogeneous_graph
+
+if __name__ == '__main__':
+
+   G = history[0]
+   senders, receivers = jnp.where(nx.to_numpy_array(G))
+
+   nodes = []
+   for node, data in G.nodes(data=True):
+       nodes.append(jax.tree.map(jnp.atleast_1d, Node(**data)))
+
+   n_node=len(nodes)
+   nodes = jax.tree.map(lambda *args: jnp.stack(args), *nodes)
+
+   edges=[]
+   for s,d,data in G.edges(data=True):
+        edges.append(jax.tree.map(jnp.atleast_1d, Edge(**data)))
+
+   n_edge = len(edges)
+   edges = jax.tree.map(lambda *args: jnp.stack(args), *edges)
+
+   graph = jraph.GraphsTuple(
+       nodes=nodes,
+       edges=edges,
+       receivers=receivers,
+       senders=senders,
+       globals=None,
+       n_node=n_node,
+       n_edge=n_edge
+   )
+
+   model = Model()
+
+   params = model.init(jax.random.key(0), graph)
+
+   ug = model.apply(params, graph)
+
+
+   ...
+
