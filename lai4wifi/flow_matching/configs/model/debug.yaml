@@ -1,0 +1,5 @@
+channels: 4
+channel_multipliers: [2, 3, 4]
+n_resnet_blocks: 2
+n_heads: 2
+out_shape: [28, 28, 1]

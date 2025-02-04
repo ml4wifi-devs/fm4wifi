@@ -1,0 +1,9 @@
+defaults:
+  - _self_
+  - model: debug
+  - optimizer: debug
+  - train: debug
+name: flow_matching
+hydra:
+  run:
+    dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

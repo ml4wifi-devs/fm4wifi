@@ -120,11 +120,11 @@ class UNet(nn.Module):
 
 
 class FMUnet(UNet):
-    channels: int = 4
-    channel_multipliers: tuple = (2, 3, 4)
-    n_resnet_blocks: int = 2
-    n_heads: int = 2
-    out_shape: tuple = (44, 44, 1)
+    channels: int
+    channel_multipliers: tuple
+    n_resnet_blocks: int
+    n_heads: int
+    out_shape: tuple
 
     def gen(self, cond, n_steps=10):
         def scan_fn(unet, x, t):
