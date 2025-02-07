@@ -1,0 +1,11 @@
+ckpt:
+  intermediate: false
+  freq: 1000
+log:
+  type: 'stdout'
+  freq: 100
+val:
+  n_steps: 5
+  freq: 500
+n_steps: 10000
+seed: 42
