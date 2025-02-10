@@ -12,10 +12,10 @@ from omegaconf import OmegaConf
 from lai4wifi.flow_matching.model import FMUnet
 
 
-def load():
+def load(batch_size):
     import tensorflow as tf
     import tensorflow_datasets as tfds
-    ds = tfds.load(name="mnist", split="train", batch_size=128, as_supervised=False)
+    ds = tfds.load(name="mnist", split="train", batch_size=batch_size, as_supervised=False)
     ds = ds.map(lambda x: (tf.cast(x['image'], tf.float32) / 255, tf.zeros((tf.shape(x['image'])[0], 10))))
     ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
     ds = ds.repeat()
@@ -60,8 +60,8 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key = jax.random.split(key, 3)
 
-    data = load()
-    val_data = iter(load())
+    data = load(cfg.train.batch_size)
+    val_data = iter(load(cfg.train.batch_size))
     sample = next(iter(data))
     sample = sample + (jnp.zeros(sample[0].shape[0]),)
 
@@ -125,6 +125,7 @@ def main(cfg):
 
     ckpt_manager.wait_until_finished()
     ckpt_manager.close()
+
 
 if __name__ == '__main__':
     main()
