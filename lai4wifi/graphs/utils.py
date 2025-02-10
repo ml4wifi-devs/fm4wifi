@@ -6,6 +6,10 @@ import networkx as nx
 from lai4wifi.graphs.attributes import Edge
 
 
+def make_batch(graph_list):
+    return jax.tree.map(lambda *args: jnp.stack(args), *graph_list)
+
+
 def nx_to_jraph(G, pad=True, n_node=64, n_edge=256):
     Gl = nx.line_graph(G)
     nx.set_node_attributes(Gl, dict(map(lambda e: (e[0:2], e[2]), G.edges(data=True))))

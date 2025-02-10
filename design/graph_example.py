@@ -2,8 +2,8 @@ import jax
 import networkx as nx
 
 from lai4wifi.graphs.attributes import *
-from lai4wifi.graphs.model import Encoder
-from lai4wifi.graphs.utils import nx_to_jraph
+from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import nx_to_jraph, make_batch
 
 
 G = nx.Graph([
@@ -35,13 +35,9 @@ G = nx.Graph([
 if __name__ == '__main__':
     example_graph = nx_to_jraph(G)
     batch = [example_graph] * 16
+    batch = make_batch(batch)
 
-    _, treedef = jax.tree.flatten(example_graph)
-    graphs = [jax.tree.flatten(g)[0] for g in batch]
-    graphs = [jnp.asarray(x) for x in zip(*graphs)]
-    batch = jax.tree.unflatten(treedef, graphs)
-
-    model = Encoder()
+    model = GnnAutoencoder()
     params = model.init(jax.random.key(0), batch)
     ug = model.apply(params, batch)
 
