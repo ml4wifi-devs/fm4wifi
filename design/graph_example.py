@@ -1,3 +1,4 @@
+import jax
 import networkx as nx
 
 from lai4wifi.graphs.attributes import *
@@ -32,10 +33,20 @@ G = nx.Graph([
 
 
 if __name__ == '__main__':
-    graph = nx_to_jraph(G)
+    example_graph = nx_to_jraph(G)
+    batch = [example_graph] * 16
+
+    _, treedef = jax.tree.flatten(example_graph)
+    graphs = [jax.tree.flatten(g)[0] for g in batch]
+    graphs = [jnp.asarray(x) for x in zip(*graphs)]
+    batch = jax.tree.unflatten(treedef, graphs)
 
     model = Encoder()
-    params = model.init(jax.random.key(0), graph)
-    ug = model.apply(params, graph)
+    params = model.init(jax.random.key(0), batch)
+    ug = model.apply(params, batch)
+
+    print(jax.tree.map(jnp.shape, batch))
+    print(jax.tree.map(jnp.shape, params))
+    print(jax.tree.map(jnp.shape, ug))
 
     ...
