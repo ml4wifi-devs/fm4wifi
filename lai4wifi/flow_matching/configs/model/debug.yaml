@@ -1,5 +1,5 @@
-channels: 4
-channel_multipliers: [2, 3, 4]
-n_resnet_blocks: 2
-n_heads: 2
-out_shape: [28, 28, 1]
+num_layers: 2
+num_heads: 16
+ff_dim: 1024
+latent_size: 32
+drop_rate: 0.2
