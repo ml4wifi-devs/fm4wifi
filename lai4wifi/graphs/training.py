@@ -59,7 +59,7 @@ def main(cfg):
 
         @jax.vmap
         def vmap_loss_fn(batch, pred):
-            mask = jraph.get_node_padding_mask(pred)[..., None]
+            mask = jraph.get_node_padding_mask(pred)
             active_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.active, batch.nodes.active).mean(axis=-1)
             mcs_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.mcs, batch.nodes.mcs).mean(axis=-1)
             rate_loss = optax.squared_error(pred.nodes.rate, batch.nodes.rate).mean(axis=-1)
@@ -68,7 +68,7 @@ def main(cfg):
             tx_power_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.tx_power, batch.nodes.tx_power).mean(axis=-1)
             type_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.type, batch.nodes.type).mean(axis=-1)
             loss = mask * (active_loss + mcs_loss + rate_loss + rssi_loss + selected_loss + tx_power_loss + type_loss) / 7
-            return loss
+            return loss.mean()
 
         return vmap_loss_fn(batch, pred).mean()
 
