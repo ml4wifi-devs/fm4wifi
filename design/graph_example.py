@@ -1,236 +1,41 @@
-from dataclasses import dataclass, field
-import enum
-import jraph
-
 import networkx as nx
-import numpy as np
 
-import jax.numpy as jnp
-import jax
-
-import flax.linen as nn
+from lai4wifi.graphs.attributes import *
+from lai4wifi.graphs.model import Encoder
+from lai4wifi.graphs.utils import nx_to_jraph
 
 
-
-@jax.tree_util.register_dataclass
-@dataclass
-class Node:
-    type: jax.Array= field(default_factory=lambda :jnp.zeros(()))
-    tx_power: jax.Array= field(default_factory=lambda :jnp.zeros(()))
-    MCS: jax.Array= field(default_factory=lambda :jnp.zeros(()))
-    RSSI: jax.Array= field(default_factory=lambda :jnp.zeros(()))
-
-
-@jax.tree_util.register_dataclass
-@dataclass
-class Edge:
-    active: jax.Array= field(default_factory=lambda :jnp.zeros(()))
-    rate: jax.Array= field(default_factory=lambda :jnp.zeros(()))
-    RSSI: jax.Array= field(default_factory=lambda :jnp.zeros(()))
-
-class NodeType(enum.Enum):
-    AP = 0
-    STA = 1
-
-    def __jax_array__(self):
-        #return jnp.array(self.value)
-        return jax.nn.one_hot(jnp.array(self.value), len(type(self)))
-
-
-# main graph
-G = nx.DiGraph()
-G.add_nodes_from([
-    (0, {'type': NodeType.AP}),
-    (1, {'type': NodeType.STA}),
-    (2, {'type': NodeType.STA}),
-    (3, {'type': NodeType.STA}),
-    (4, {'type': NodeType.STA}),
-    (5, {'type': NodeType.AP}),
-    (6, {'type': NodeType.STA}),
-    (7, {'type': NodeType.STA}),
-    (8, {'type': NodeType.STA}),
-    (9, {'type': NodeType.STA}),
-    (10, {'type': NodeType.AP}),
-    (11, {'type': NodeType.STA}),
-    (12, {'type': NodeType.STA}),
-    (13, {'type': NodeType.STA}),
-    (14, {'type': NodeType.STA}),
-    (15, {'type': NodeType.AP}),
-    (16, {'type': NodeType.STA}),
-    (17, {'type': NodeType.STA}),
-    (18, {'type': NodeType.STA}),
-    (19, {'type': NodeType.STA})
-])
-G.add_edges_from([
-    # active connections
-    (0, 1, {'active': True}),
-    (0, 2, {'active': True}),
-    (0, 3, {'active': False}),
-    (0, 4, {'active': True}),
-    (5, 6, {'active': True}),
-    (5, 7, {'active': True}),
-    (5, 8, {'active': True}),
-    (5, 9, {'active': False}),
-    (10, 11, {'active': True}),
-    (10, 12, {'active': True}),
-    (10, 13, {'active': True}),
-    (10, 14, {'active': True}),
-    (15, 16, {'active': False}),
-    (15, 17, {'active': False}),
-    (15, 18, {'active': True}),
-    (15, 19, {'active': True}),
-    # selected connection
-    (5, 7, {'selected': True}),
-    # mean RSSI values between APs from beacons
-    (0, 5, {'RSSI': -50.0}),
-    (5, 0, {'RSSI': -50.0}),
-    (0, 10, {'RSSI': -55.0}),
-    (10, 0, {'RSSI': -55.0}),
-    (0, 15, {'RSSI': -60.0}),
-    (15, 0, {'RSSI': -60.0}),
-    (5, 10, {'RSSI': -53.0}),
-    (10, 5, {'RSSI': -53.0}),
-    (5, 15, {'RSSI': -57.0}),
-    (15, 5, {'RSSI': -57.0}),
-    (10, 15, {'RSSI': -51.0}),
-    (15, 10, {'RSSI': -51.0})
+G = nx.Graph([
+    (0, 1, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (0, 2, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (0, 3, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (0, 4, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (5, 6, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (5, 7, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.TRUE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (5, 8, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (5, 9, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (10, 11, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (10, 12, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (10, 13, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (10, 14, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (15, 16, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (15, 17, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (15, 18, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (15, 19, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
+    (0, 5, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -50.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
+    (0, 10, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -55.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
+    (0, 15, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -60.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
+    (5, 10, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -53.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
+    (5, 15, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -57.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
+    (10, 15, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -51.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP})
 ])
 
-history = []
-
-# historical example 1
-history.append(nx.DiGraph())
-history[0].add_nodes_from(G.nodes(data=True))
-history[0].add_edges_from([
-    (0, 4, {'rate': 68.8}),
-    (15, 18, {'rate': 104.2})
-])
-history[0].nodes[0]['tx_power'] = 18.92
-history[0].nodes[0]['MCS'] = 5
-history[0].nodes[15]['tx_power'] = 16.52
-history[0].nodes[15]['MCS'] = 8
-history[0].nodes[4]['RSSI'] = -60.0
-history[0].nodes[18]['RSSI'] = -50.0
-
-# historical example 2
-history.append(nx.DiGraph())
-history[1].add_nodes_from(G.nodes(data=True))
-history[1].add_edges_from([
-    (10, 11, {'rate': 104.2}),
-    (5, 7, {'rate': 143.2})
-])
-history[1].nodes[10]['tx_power'] = 11.95
-history[1].nodes[10]['MCS'] = 8
-history[1].nodes[5]['tx_power'] = 18.08
-history[1].nodes[5]['MCS'] = 11
-history[1].nodes[11]['RSSI'] = -53.0
-history[1].nodes[7]['RSSI'] = -37.0
-
-# historical example 3
-history.append(nx.DiGraph())
-history[2].add_nodes_from(G.nodes(data=True))
-history[2].add_edges_from([
-    (10, 13, {'rate': 114.7}),
-    (5, 6, {'rate': 114.7})
-])
-history[2].nodes[10]['tx_power'] = 14.71
-history[2].nodes[10]['MCS'] = 9
-history[2].nodes[5]['tx_power'] = 14.88
-history[2].nodes[5]['MCS'] = 9
-history[2].nodes[13]['RSSI'] = -41.0
-history[2].nodes[6]['RSSI'] = -40.0
-
-# historical example 4
-history.append(nx.DiGraph())
-history[3].add_nodes_from(G.nodes(data=True))
-history[3].add_edges_from([
-    (0, 2, {'rate': 51.6}),
-    (15, 18, {'rate': 114.7})
-])
-history[3].nodes[0]['tx_power'] = 16.07
-history[3].nodes[0]['MCS'] = 4
-history[3].nodes[15]['tx_power'] = 16.27
-history[3].nodes[15]['MCS'] = 9
-history[3].nodes[2]['RSSI'] = -65.0
-history[3].nodes[18]['RSSI'] = -40.0
-
-# historical example 5
-history.append(nx.DiGraph())
-history[4].add_nodes_from(G.nodes(data=True))
-history[4].add_edges_from([
-    (0, 1, {'rate': 143.2}),
-])
-history[4].nodes[0]['tx_power'] = 20.0
-history[4].nodes[0]['MCS'] = 11
-history[4].nodes[1]['RSSI'] = -30.0
-
-# target graph
-target = nx.DiGraph()
-target.add_nodes_from(G.nodes(data=True))
-target.add_edges_from([
-    (5, 7),
-    (10, 12),
-])
-target.nodes[5]['tx_power'] = 19.54
-target.nodes[5]['MCS'] = 9
-target.nodes[10]['tx_power'] = 13.64
-target.nodes[10]['MCS'] = 8
-
-# https://arxiv.org/pdf/2107.09422v1
-#https://github.com/google-deepmind/jraph/blob/master/jraph/ogb_examples/train_flax.py
-
-
-class Model(nn.Module):
-    @nn.compact
-    def __call__(self, x):
-        def make_embed_fn(latent_size):
-            @jraph.concatenated_args
-            def embed(inputs):
-                return nn.Dense(latent_size)(inputs)
-
-            return embed
-
-        homogeneous_graph = jraph.GraphMapFeatures(
-            embed_node_fn=make_embed_fn(32),
-            embed_edge_fn=make_embed_fn(32),
-        )(x)
-        return homogeneous_graph
 
 if __name__ == '__main__':
+    graph = nx_to_jraph(G)
 
-   G = history[0]
-   senders, receivers = jnp.where(nx.to_numpy_array(G))
+    model = Encoder()
+    params = model.init(jax.random.key(0), graph)
+    ug = model.apply(params, graph)
 
-   nodes = []
-   for node, data in G.nodes(data=True):
-       nodes.append(jax.tree.map(jnp.atleast_1d, Node(**data)))
-
-   n_node=len(nodes)
-   nodes = jax.tree.map(lambda *args: jnp.stack(args), *nodes)
-
-   edges=[]
-   for s,d,data in G.edges(data=True):
-        edges.append(jax.tree.map(jnp.atleast_1d, Edge(**data)))
-
-   n_edge = len(edges)
-   edges = jax.tree.map(lambda *args: jnp.stack(args), *edges)
-
-   graph = jraph.GraphsTuple(
-       nodes=nodes,
-       edges=edges,
-       receivers=receivers,
-       senders=senders,
-       globals=None,
-       n_node=n_node,
-       n_edge=n_edge
-   )
-
-   model = Model()
-
-   params = model.init(jax.random.key(0), graph)
-
-   ug = model.apply(params, graph)
-
-
-   ...
-
+    ...
