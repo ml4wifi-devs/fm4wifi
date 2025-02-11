@@ -7,7 +7,7 @@ import jax.numpy as jnp
 
 @jax.tree_util.register_dataclass
 @dataclass
-class Edge:
+class Connection:
     active: jax.Array
     mcs: jax.Array
     rate: jax.Array

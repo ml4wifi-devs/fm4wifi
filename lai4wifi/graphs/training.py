@@ -3,6 +3,7 @@ import os
 
 import hydra
 import jax
+import jax.numpy as jnp
 import jraph
 import optax
 import orbax.checkpoint as ocp
@@ -52,6 +53,8 @@ def load(batch_size, n_node, n_edge):
 
 @hydra.main(config_path="configs", config_name="gnn", version_base=None)
 def main(cfg):
+    loss_weights = jnp.array(cfg.train.loss_weights)
+    loss_weights /= loss_weights.sum()
 
     @jax.jit
     def loss_fn(params, key, batch):
@@ -60,24 +63,26 @@ def main(cfg):
         @jax.vmap
         def vmap_loss_fn(batch, pred):
             mask = jraph.get_node_padding_mask(pred)
-            active_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.active, batch.nodes.active).mean(axis=-1)
-            mcs_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.mcs, batch.nodes.mcs).mean(axis=-1)
-            rate_loss = optax.squared_error(pred.nodes.rate, batch.nodes.rate).mean(axis=-1)
-            rssi_loss = optax.squared_error(pred.nodes.rssi, batch.nodes.rssi).mean(axis=-1)
-            selected_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.selected, batch.nodes.selected).mean(axis=-1)
-            tx_power_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.tx_power, batch.nodes.tx_power).mean(axis=-1)
-            type_loss = optax.sigmoid_binary_cross_entropy(pred.nodes.type, batch.nodes.type).mean(axis=-1)
-            loss = mask * (active_loss + mcs_loss + rate_loss + rssi_loss + selected_loss + tx_power_loss + type_loss) / 7
-            return loss.mean()
+            active_loss   = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.active, batch.nodes.active).mean(axis=-1)
+            mcs_loss      = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.mcs, batch.nodes.mcs).mean(axis=-1)
+            rate_loss     = mask * optax.squared_error(pred.nodes.rate, batch.nodes.rate).mean(axis=-1)
+            rssi_loss     = mask * optax.squared_error(pred.nodes.rssi, batch.nodes.rssi).mean(axis=-1)
+            selected_loss = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.selected, batch.nodes.selected).mean(axis=-1)
+            tx_power_loss = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.tx_power, batch.nodes.tx_power).mean(axis=-1)
+            type_loss     = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.type, batch.nodes.type).mean(axis=-1)
+            losses        = jnp.array([active_loss, mcs_loss, rate_loss, rssi_loss, selected_loss, tx_power_loss, type_loss]).mean(axis=1)
+            return losses @ loss_weights, losses
 
-        return vmap_loss_fn(batch, pred).mean()
+        loss, other_losses = vmap_loss_fn(batch, pred)
+        loss, other_losses = loss.mean(), other_losses.mean(axis=0)
+        return loss, other_losses
 
     @jax.jit
     def step_fn(params, opt_state, key, batch):
-        loss, grads = jax.value_and_grad(loss_fn)(params, key, batch)
+        (loss, other_losses), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, key, batch)
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
-        return params, opt_state, loss
+        return params, opt_state, loss, other_losses
 
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key = jax.random.split(key, 3)
@@ -108,21 +113,36 @@ def main(cfg):
         log_dict = {}
 
         train_key, subkey = jax.random.split(train_key)
-        params, opt_state, loss = step_fn(params, opt_state, subkey, batch)
+        params, opt_state, loss, other_losses = step_fn(params, opt_state, subkey, batch)
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
+        log_dict['train/active_loss'] = other_losses[0].item()
+        log_dict['train/mcs_loss'] = other_losses[1].item()
+        log_dict['train/rate_loss'] = other_losses[2].item()
+        log_dict['train/rssi_loss'] = other_losses[3].item()
+        log_dict['train/selected_loss'] = other_losses[4].item()
+        log_dict['train/tx_power_loss'] = other_losses[5].item()
+        log_dict['train/type_loss'] = other_losses[6].item()
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
-            val_loss = 0.0
+            val_loss, val_other_losses = 0.0, jnp.zeros(7)
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch = next(val_data)
-                loss = loss_fn(params, subkey, val_batch)
+                loss, other_losses = loss_fn(params, subkey, val_batch)
                 val_loss += loss.item()
+                val_other_losses += other_losses
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
+            log_dict['val/active_loss'] = val_other_losses[0].item() / cfg.train.val.n_steps
+            log_dict['val/mcs_loss'] = val_other_losses[1].item() / cfg.train.val.n_steps
+            log_dict['val/rate_loss'] = val_other_losses[2].item() / cfg.train.val.n_steps
+            log_dict['val/rssi_loss'] = val_other_losses[3].item() / cfg.train.val.n_steps
+            log_dict['val/selected_loss'] = val_other_losses[4].item() / cfg.train.val.n_steps
+            log_dict['val/tx_power_loss'] = val_other_losses[5].item() / cfg.train.val.n_steps
+            log_dict['val/type_loss'] = val_other_losses[6].item() / cfg.train.val.n_steps
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
             logging.info(log_dict)

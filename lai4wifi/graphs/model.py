@@ -3,7 +3,7 @@ from typing import Callable, Sequence
 import jraph
 import flax.linen as nn
 
-from lai4wifi.graphs.attributes import Edge
+from lai4wifi.graphs.attributes import Connection
 
 
 class MLP(nn.Module):
@@ -72,7 +72,7 @@ class Decoder(nn.Module):
         )
 
         x = decode(z)
-        nodes = Edge(
+        nodes = Connection(
             active=nn.Dense(2)(x.nodes),
             mcs=nn.Dense(12)(x.nodes),
             rate=nn.Dense(1)(x.nodes),
