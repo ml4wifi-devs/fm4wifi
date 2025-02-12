@@ -98,11 +98,17 @@ class GnnAutoencoder(nn.Module):
     encoder_features: Sequence[int] = (32, 32)
     decoder_features: Sequence[int] = (32, 64)
 
-    @nn.compact
-    def __call__(self, graph):
-        encoder = Encoder(self.latent_size, self.encoder_features)
-        decoder = Decoder(self.decoder_features)
+    def setup(self):
+        self.encoder = Encoder(self.latent_size, self.encoder_features)
+        self.decoder = Decoder(self.decoder_features)
 
-        x = encoder(graph)
-        x = decoder(x)
+    def __call__(self, graph):
+        z = self.encoder(graph)
+        x = self.decoder(z)
         return x
+
+    def encode(self, graph):
+        return self.encoder(graph)
+
+    def decode(self, z):
+        return self.decoder(z)
