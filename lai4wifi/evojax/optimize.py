@@ -1,3 +1,8 @@
+import os
+os.environ['JAX_COMPILATION_CACHE_DIR'] = '/tmp/jax_cache'
+os.environ['JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES'] = '-1'
+os.environ['JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS'] = '0'
+
 import jax
 import jax.numpy as jnp
 import networkx as nx
@@ -75,9 +80,9 @@ if __name__ == '__main__':
 
     solver = CMA_ES_JAX(
         param_size=emb_noise.size,
-        pop_size=512,
+        pop_size=2048,
         mean=emb_noise.reshape(-1),
-        init_stdev=5.0
+        init_stdev=10.0
     )
 
     @jax.jit
@@ -109,7 +114,7 @@ if __name__ == '__main__':
 
     history = []
 
-    for _ in (pbar := trange(100)):
+    for _ in (pbar := trange(500)):
         solutions = solver.ask()
         fitness = fitness_fn(solutions)
         solver.tell(fitness)
