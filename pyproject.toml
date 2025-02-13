@@ -16,9 +16,11 @@ authors = [
 
 requires-python = ">=3.12"
 dependencies = [
+    "evojax~=0.2.17",
     "hydra-core~=1.3.2",
-    "jax-ai-stack[tfds]~=2025.1.9",
+    "jax-ai-stack[tfds]~=2025.2.5",
     "jraph~=0.0.6.dev0",
+    "mapc-sim~=0.1.8",
     "matplotlib~=3.9.4",
     "networkx~=3.4.2",
     "wandb~=0.19.5",

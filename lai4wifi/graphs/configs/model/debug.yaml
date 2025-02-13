@@ -1,0 +1,4 @@
+latent_size: 64
+encoder_features: [32, 64]
+decoder_features: [32, 64]
+dtype: "float32"
