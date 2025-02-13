@@ -6,14 +6,15 @@ from flax import linen as nn
 class FeedForwardBlock(nn.Module):
     ff_dim: int
     drop_rate: float
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, x, training=True):
         out_dim = x.shape[-1]
-        x = nn.Dense(self.ff_dim, dtype=jnp.bfloat16, use_bias=False)(x)
+        x = nn.Dense(self.ff_dim, dtype=self.dtype, use_bias=False)(x)
         x = nn.gelu(x)
         x = nn.Dropout(self.drop_rate)(x, deterministic=not training)
-        x = nn.Dense(out_dim, dtype=jnp.bfloat16, use_bias=False)(x)
+        x = nn.Dense(out_dim, dtype=self.dtype, use_bias=False)(x)
         x = nn.Dropout(self.drop_rate)(x, deterministic=not training)
         return x
 
@@ -22,6 +23,7 @@ class TransformerBlock(nn.Module):
     num_heads: int
     ff_dim: int
     drop_rate: float
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, x, mask, training=True):
@@ -30,14 +32,14 @@ class TransformerBlock(nn.Module):
         x = nn.MultiHeadDotProductAttention(
             num_heads=self.num_heads,
             qkv_features=x.shape[-1],
-            dtype=jnp.bfloat16,
+            dtype=self.dtype,
             use_bias=False
         )(x, mask=mask)
         x = x + residual
 
         residual = x
         x = nn.LayerNorm()(x)
-        x = FeedForwardBlock(self.ff_dim, self.drop_rate)(x, training=training)
+        x = FeedForwardBlock(self.ff_dim, self.drop_rate, self.dtype)(x, training=training)
         x = x + residual
 
         return x
@@ -48,12 +50,13 @@ class Transformer(nn.Module):
     num_heads: int
     ff_dim: int
     drop_rate: float
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, x, t, mask=None, training=True):
         for block in range(self.num_layers):
-            x = TransformerBlock(self.num_heads, self.ff_dim, self.drop_rate)(x, mask, training=training)
-            t = nn.Dense(x.shape[-1], dtype=jnp.bfloat16, use_bias=False)(t)
+            x = TransformerBlock(self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, mask, training=training)
+            t = nn.Dense(x.shape[-1], dtype=self.dtype, use_bias=False)(t)
             x = x + t[:, None, :]
 
         x = nn.LayerNorm()(x)
@@ -65,6 +68,7 @@ class TimeEmbedding(nn.Module):
 
     ff_dim: int
     latent_size: int
+    dtype: jnp.dtype
 
     @staticmethod
     def get_sinusoidal_embeddings(timesteps, embedding_dim, min_timescale=1, max_timescale=1.0e4):
@@ -79,7 +83,7 @@ class TimeEmbedding(nn.Module):
     @nn.compact
     def __call__(self, t):
         t = self.get_sinusoidal_embeddings(t, self.latent_size)
-        return FeedForwardBlock(self.ff_dim, drop_rate=0.)(t)
+        return FeedForwardBlock(self.ff_dim, drop_rate=0., dtype=self.dtype)(t)
 
 
 class FlowMatching(nn.Module):
@@ -88,13 +92,14 @@ class FlowMatching(nn.Module):
     ff_dim: int
     latent_size: int
     drop_rate: float
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, x, t, training=True):
         x = x.reshape(x.shape[0], x.shape[1], -1)
-        t = TimeEmbedding(self.ff_dim, x.shape[-1])(t)
-        x = Transformer(self.num_layers, self.num_heads, self.ff_dim, self.drop_rate)(x, t, training=training)
-        x = nn.Dense(self.latent_size, dtype=jnp.bfloat16)(x)
+        t = TimeEmbedding(self.ff_dim, x.shape[-1], self.dtype)(t)
+        x = Transformer(self.num_layers, self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, t, training=training)
+        x = nn.Dense(self.latent_size, dtype=self.dtype)(x)
         return x
 
     def gen(self, context, n_steps=10):
@@ -105,7 +110,7 @@ class FlowMatching(nn.Module):
             x = x + v / n_steps
             return x, None
 
-        z = jax.random.normal(self.make_rng('lai'), context.shape[:2] + (1, self.latent_size,))
+        z = jax.random.normal(self.make_rng('lai'), context.shape[:2] + (1, self.latent_size,), dtype=jnp.float32)
         scan = nn.scan(scan_fn, variable_broadcast='params')
         x, _ = scan(self, z, jnp.linspace(0.0, 1.0, n_steps, endpoint=False))
         return x

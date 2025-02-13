@@ -3,3 +3,4 @@ num_heads: 16
 ff_dim: 1024
 latent_size: 32
 drop_rate: 0.2
+dtype: "float32"
