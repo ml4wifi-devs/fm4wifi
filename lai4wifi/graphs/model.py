@@ -1,5 +1,6 @@
 from typing import Callable, Sequence
 
+import jax.numpy as jnp
 import jraph
 import flax.linen as nn
 
@@ -8,33 +9,35 @@ from lai4wifi.graphs.attributes import Connection
 
 class MLP(nn.Module):
     features: list
+    dtype: jnp.dtype
     act_fn: Callable = nn.relu
     out_fn: Callable = None
 
     @nn.compact
     def __call__(self, x):
-        for size in self.features[:-1]:
-            x = nn.Dense(size)(x)
-            x = self.act_fn(x)
+        for i, size in enumerate(self.features):
+            x = nn.Dense(size, dtype=self.dtype)(x)
+            if i < len(self.features) - 1:
+                x = self.act_fn(x)
 
         if self.out_fn is not None:
             x = self.out_fn(x)
 
-        return nn.Dense(self.features[-1])(x)
+        return x
 
 
-def make_embed_fn(latent_size):
+def make_embed_fn(latent_size, dtype):
     @jraph.concatenated_args
     def embed_fn(inputs):
-        return nn.Dense(latent_size)(inputs)
+        return nn.Dense(latent_size, dtype=dtype)(inputs)
 
     return embed_fn
 
 
-def make_mlp(features, out_fn=None):
+def make_mlp(features, dtype, out_fn=None):
     @jraph.concatenated_args
     def update_fn(inputs):
-        return MLP(features, out_fn=out_fn)(inputs)
+        return MLP(features, dtype, out_fn=out_fn)(inputs)
 
     return update_fn
 
@@ -45,15 +48,16 @@ class Encoder(nn.Module):
 
     latent_size: int
     features: Sequence[int]
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, graph):
         embed = jraph.GraphMapFeatures(
-            embed_node_fn=make_embed_fn(self.latent_size)
+            embed_node_fn=make_embed_fn(self.latent_size, self.dtype)
         )
         encode = jraph.GraphNetwork(
             update_edge_fn=None,
-            update_node_fn=make_mlp(self.features)
+            update_node_fn=make_mlp(self.features, self.dtype)
         )
 
         x = embed(graph)
@@ -63,23 +67,24 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     features: Sequence[int]
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, z):
         decode = jraph.GraphNetwork(
             update_edge_fn=None,
-            update_node_fn=make_mlp(self.features, nn.relu)
+            update_node_fn=make_mlp(self.features, self.dtype, nn.relu)
         )
 
         x = decode(z)
         nodes = Connection(
-            active=nn.Dense(2)(x.nodes),
-            mcs=nn.Dense(12)(x.nodes),
-            rate=nn.Dense(1)(x.nodes),
-            rssi=nn.Dense(1)(x.nodes),
-            selected=nn.Dense(2)(x.nodes),
-            tx_power=nn.Dense(4)(x.nodes),
-            type=nn.Dense(2)(x.nodes)
+            active=nn.Dense(2, dtype=self.dtype)(x.nodes),
+            mcs=nn.Dense(12, dtype=self.dtype)(x.nodes),
+            rate=nn.Dense(1, dtype=self.dtype)(x.nodes),
+            rssi=nn.Dense(1, dtype=self.dtype)(x.nodes),
+            selected=nn.Dense(2, dtype=self.dtype)(x.nodes),
+            tx_power=nn.Dense(4, dtype=self.dtype)(x.nodes),
+            type=nn.Dense(2, dtype=self.dtype)(x.nodes)
         )
 
         return jraph.GraphsTuple(
@@ -94,15 +99,22 @@ class Decoder(nn.Module):
 
 
 class GnnAutoencoder(nn.Module):
-    latent_size: int = 64
-    encoder_features: Sequence[int] = (32, 32)
-    decoder_features: Sequence[int] = (32, 64)
+    latent_size: int
+    encoder_features: Sequence[int]
+    decoder_features: Sequence[int]
+    dtype: jnp.dtype
 
-    @nn.compact
+    def setup(self):
+        self.encoder = Encoder(self.latent_size, self.encoder_features, self.dtype)
+        self.decoder = Decoder(self.decoder_features, self.dtype)
+
     def __call__(self, graph):
-        encoder = Encoder(self.latent_size, self.encoder_features)
-        decoder = Decoder(self.decoder_features)
-
-        x = encoder(graph)
-        x = decoder(x)
+        z = self.encoder(graph)
+        x = self.decoder(z)
         return x
+
+    def encode(self, graph):
+        return self.encoder(graph)
+
+    def decode(self, z):
+        return self.decoder(z)
