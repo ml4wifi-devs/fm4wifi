@@ -33,14 +33,5 @@ is a mixture of categorical and deterministic supported at 0.
     P(~0) = (1-p)P_{cat}(l[0:-1])
     P(y)=p^y[-1]*((1-p)P_{cat}(l[0:-1]))^(1-y[-1])
     log P(y) = y[-1]log(p) + (1-y[-1])(log(1-p) + logP_{cat}(l[0:-1]))
-    log P(y) = y[-1] log_sigmoid(l[-1]) + (1-y[-1]) log(1-sigmoid(l[-1])) + (1-y[-1]) logP_{cat}(l[0:-1])
+    -log P(y) = -y[-1] log_sigmoid(l[-1]) - (1-y[-1]) log(1-sigmoid(l[-1])) - (1-y[-1]) logP_{cat}(l[0:-1])
     loss = sigmoid_cross_entropy(l[-1],y[-1]) + (1-y[-1]) softmax_cross_entropy(l[0:-1], y[0:-1])
-    
-Now we want to compute `log(1-p)` efficiently
-
-    log(1-sigmoid(l))=log(sigmoid(-l))=-softplus(l)
-
-so the final loss is
-
-    loss = y[-1] sigmoid_cross_entropy(l[-1],y[-1]) + (1-y[-1]) (softmax_cross_entropy(l[0:-1], y[0:-1]) - softplus(l[-1]))
-    
