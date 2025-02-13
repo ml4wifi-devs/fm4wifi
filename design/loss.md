@@ -25,7 +25,7 @@ so
 - $p = p_{NA}=sigmoid(l[-1])$
 - $\pi=p_{0:-1}=softmax(l[0:-1])$
 
-The second term has meaning only when the last value is `1` so the distribution under consideration
+The second term has meaning only when the last value is `0` so the distribution under consideration
 is a mixture of categorical and deterministic supported at 0.
 
 
