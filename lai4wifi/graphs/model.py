@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jraph
 import flax.linen as nn
 
-from lai4wifi.graphs.attributes import Connection
+from lai4wifi.graphs.attributes import *
 
 
 class MLP(nn.Module):
@@ -78,13 +78,13 @@ class Decoder(nn.Module):
 
         x = decode(z)
         nodes = Connection(
-            active=nn.Dense(2, dtype=self.dtype)(x.nodes),
-            mcs=nn.Dense(12, dtype=self.dtype)(x.nodes),
+            active=nn.Dense(len(IsActive), dtype=self.dtype)(x.nodes),
+            mcs=nn.Dense(len(McsValue), dtype=self.dtype)(x.nodes),
             rate=nn.Dense(1, dtype=self.dtype)(x.nodes),
             rssi=nn.Dense(1, dtype=self.dtype)(x.nodes),
-            selected=nn.Dense(2, dtype=self.dtype)(x.nodes),
-            tx_power=nn.Dense(4, dtype=self.dtype)(x.nodes),
-            type=nn.Dense(2, dtype=self.dtype)(x.nodes)
+            selected=nn.Dense(len(IsSelected), dtype=self.dtype)(x.nodes),
+            tx_power=nn.Dense(len(TxPowerValue), dtype=self.dtype)(x.nodes),
+            type=nn.Dense(len(EdgeType), dtype=self.dtype)(x.nodes)
         )
 
         return jraph.GraphsTuple(
