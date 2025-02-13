@@ -19,25 +19,25 @@ class Connection:
 
 class JaxEnum(enum.Enum):
     def __jax_array__(self):
-        return jax.nn.one_hot(jnp.asarray(self.value), len(type(self)) - 1)
+        return jax.nn.one_hot(jnp.asarray(self.value), len(type(self)))
 
 
 class EdgeType(JaxEnum):
     AP = 0
     STA = 1
-    NAN = 2
+    NA = 2
 
 
 class IsActive(JaxEnum):
     FALSE = 0
     TRUE = 1
-    NAN = 2
+    NA = 2
 
 
 class IsSelected(JaxEnum):
     FALSE = 0
     TRUE = 1
-    NAN = 2
+    NA = 2
 
 
 class McsValue(JaxEnum):
@@ -53,7 +53,7 @@ class McsValue(JaxEnum):
     MCS_9 = 9
     MCS_10 = 10
     MCS_11 = 11
-    NAN = 12
+    NA = 12
 
 
 class TxPowerValue(JaxEnum):
@@ -61,4 +61,4 @@ class TxPowerValue(JaxEnum):
     LVL_2 = 1
     LVL_3 = 2
     LVL_4 = 3
-    NAN = 4
+    NA = 4

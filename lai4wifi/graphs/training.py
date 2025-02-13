@@ -19,28 +19,28 @@ def load(batch_size, n_node, n_edge):
     from lai4wifi.graphs.utils import nx_to_jraph, make_batch
 
     G = nx.Graph([
-        (0, 1, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (0, 2, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (0, 3, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (0, 4, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (5, 6, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (5, 7, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.TRUE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (5, 8, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (5, 9, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (10, 11, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (10, 12, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (10, 13, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (10, 14, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (15, 16, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (15, 17, {'active': IsActive.FALSE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (15, 18, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (15, 19, {'active': IsActive.TRUE, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.STA}),
-        (0, 5, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -50.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
-        (0, 10, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -55.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
-        (0, 15, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -60.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
-        (5, 10, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -53.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
-        (5, 15, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -57.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP}),
-        (10, 15, {'active': IsActive.NAN, 'mcs': McsValue.NAN, 'rate': 0., 'rssi': -51.0, 'selected': IsSelected.NAN, 'tx_power': TxPowerValue.NAN, 'type': EdgeType.AP})
+        (0, 1, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 2, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 3, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 4, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (5, 6, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (5, 7, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.TRUE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (5, 8, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (5, 9, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (10, 11, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (10, 12, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (10, 13, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (10, 14, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (15, 16, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (15, 17, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (15, 18, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (15, 19, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 5, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -50.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (0, 10, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -55.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (0, 15, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -60.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (5, 10, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -53.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (5, 15, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -57.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (10, 15, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -51.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP})
     ])
 
     example_graph = nx_to_jraph(G, n_node=n_node, n_edge=n_edge)
@@ -60,17 +60,24 @@ def main(cfg):
     def loss_fn(params, key, batch):
         pred = model.apply(params, batch)
 
+        def mixture_categorical_loss(logits, labels):
+            na_logits, na_labels = logits[..., -1], labels[..., -1]
+            softmax_logits, softmax_labels = logits[..., :-1], labels[..., :-1]
+            na_loss = optax.sigmoid_binary_cross_entropy(na_logits, na_labels)
+            softmax_loss = optax.softmax_cross_entropy(softmax_logits, softmax_labels)
+            return na_loss + na_labels * softmax_loss
+
         @jax.vmap
         def vmap_loss_fn(batch, pred):
             mask = jraph.get_node_padding_mask(pred)
-            active_loss   = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.active, batch.nodes.active).mean(axis=-1)
-            mcs_loss      = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.mcs, batch.nodes.mcs).mean(axis=-1)
+            active_loss   = mask * mixture_categorical_loss(pred.nodes.active, batch.nodes.active)
+            mcs_loss      = mask * mixture_categorical_loss(pred.nodes.mcs, batch.nodes.mcs)
             rate_loss     = mask * optax.squared_error(pred.nodes.rate, batch.nodes.rate).mean(axis=-1)
             rssi_loss     = mask * optax.squared_error(pred.nodes.rssi, batch.nodes.rssi).mean(axis=-1)
-            selected_loss = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.selected, batch.nodes.selected).mean(axis=-1)
-            tx_power_loss = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.tx_power, batch.nodes.tx_power).mean(axis=-1)
-            type_loss     = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.type, batch.nodes.type).mean(axis=-1)
-            losses        = jnp.array([active_loss, mcs_loss, rate_loss, rssi_loss, selected_loss, tx_power_loss, type_loss]).mean(axis=1)
+            selected_loss = mask * mixture_categorical_loss(pred.nodes.selected, batch.nodes.selected)
+            tx_power_loss = mask * mixture_categorical_loss(pred.nodes.tx_power, batch.nodes.tx_power)
+            type_loss     = mask * mixture_categorical_loss(pred.nodes.type, batch.nodes.type)
+            losses        = jnp.array([active_loss, mcs_loss, rate_loss, rssi_loss, selected_loss, tx_power_loss, type_loss]).mean(axis=-1)
             return losses @ loss_weights, losses
 
         loss, other_losses = vmap_loss_fn(batch, pred)
