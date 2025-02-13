@@ -72,11 +72,12 @@ if __name__ == '__main__':
     init_key, emb_key = jax.random.split(key)
     graph, idx_to_edge, idx_to_ap, selected_idx, n_nodes, n_stas, n_conns, pos, aps = load_example()
 
-    model = GnnAutoencoder()
+    model = GnnAutoencoder(latent_size=32, encoder_features=(), decoder_features=(), dtype=jnp.float32)
     params = model.init({'params': init_key}, graph)
 
+    noise_std = 0.1
     emb = model.apply(params, graph, method='encode').nodes
-    emb_noise = emb + jax.random.normal(emb_key, emb.shape)
+    emb_noise = emb + noise_std * jax.random.normal(emb_key, emb.shape)
 
     solver = CMA_ES_JAX(
         param_size=emb_noise.size,
