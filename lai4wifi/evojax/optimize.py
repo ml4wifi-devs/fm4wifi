@@ -11,35 +11,35 @@ from mapc_sim.sim import network_data_rate
 from evojax.algo import CMA_ES_JAX
 from tqdm import trange
 
-from lai4wifi.graphs.attributes import IsActive, McsValue, IsSelected, TxPowerValue, EdgeType
+from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import nx_to_jraph
 
 
 def load_example():
     G = nx.Graph([
-        (0, 4, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (0, 5, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (0, 6, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (0, 7, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (1, 8, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (1, 9, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.TRUE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (1, 10, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (1, 11, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (2, 12, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (2, 13, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (2, 14, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (2, 15, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (3, 16, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (3, 17, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (3, 18, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (3, 19, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rate': 0., 'rssi': 0., 'selected': IsSelected.FALSE, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
-        (0, 1, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -50.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
-        (0, 2, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -55.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
-        (0, 3, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -60.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
-        (1, 2, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -53.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
-        (1, 3, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -57.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
-        (2, 3, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rate': 0., 'rssi': -51.0, 'selected': IsSelected.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP})
+        (0, 4, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 5, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 6, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 7, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (1, 8, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (1, 9, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.TRUE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (1, 10, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (1, 11, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (2, 12, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (2, 13, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (2, 14, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (2, 15, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (3, 16, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (3, 17, {'active': IsActive.FALSE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (3, 18, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (3, 19, {'active': IsActive.TRUE, 'mcs': McsValue.NA, 'rssi': 0., 'selected': IsSelected.FALSE, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.STA}),
+        (0, 1, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rssi': -50.0, 'selected': IsSelected.NA, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (0, 2, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rssi': -55.0, 'selected': IsSelected.NA, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (0, 3, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rssi': -60.0, 'selected': IsSelected.NA, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (1, 2, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rssi': -53.0, 'selected': IsSelected.NA, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (1, 3, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rssi': -57.0, 'selected': IsSelected.NA, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP}),
+        (2, 3, {'active': IsActive.NA, 'mcs': McsValue.NA, 'rssi': -51.0, 'selected': IsSelected.NA, 'success': IsSuccessful.NA, 'tx_power': TxPowerValue.NA, 'type': EdgeType.AP})
     ])
 
     d_ap, d_sta = 20.0, 2.0
@@ -64,7 +64,7 @@ def load_example():
     n_stas = len(idx_to_edge)
     aps = jnp.unique(idx_to_ap)
 
-    return nx_to_jraph(G, pad=False), idx_to_edge, idx_to_ap, selected_idx, n_nodes, n_stas, n_conns, pos, aps
+    return nx_to_jraph(G), idx_to_edge, idx_to_ap, selected_idx, n_nodes, n_stas, n_conns, pos, aps
 
 
 if __name__ == '__main__':

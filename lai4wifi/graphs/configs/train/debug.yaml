@@ -9,7 +9,5 @@ val:
   freq: 500
 n_steps: 10000
 batch_size: 32
-pad_n_node: 64
-pad_n_edge: 256
 loss_weights: [1, 1, 1, 1, 1, 1, 1]
 seed: 42

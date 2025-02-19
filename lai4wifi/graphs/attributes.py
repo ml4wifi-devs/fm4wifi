@@ -10,9 +10,9 @@ import jax.numpy as jnp
 class Connection:
     active: jax.Array
     mcs: jax.Array
-    rate: jax.Array
     rssi: jax.Array
     selected: jax.Array
+    success: jax.Array
     tx_power: jax.Array
     type: jax.Array
 
@@ -35,6 +35,12 @@ class IsActive(JaxEnum):
 
 
 class IsSelected(JaxEnum):
+    FALSE = 0
+    TRUE = 1
+    NA = 2
+
+
+class IsSuccessful(JaxEnum):
     FALSE = 0
     TRUE = 1
     NA = 2

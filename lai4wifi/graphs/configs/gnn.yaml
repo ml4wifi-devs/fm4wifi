@@ -4,6 +4,8 @@ defaults:
   - optimizer: debug
   - train: debug
 name: gnn_autoencoder
+dataset: 'graph_dataset.pkl.lz4'
+val_dataset: 'graph_dataset.pkl.lz4'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
