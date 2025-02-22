@@ -22,17 +22,21 @@ class Graph:
 
 
 def nearest_power_of_two(n):
+    if not isinstance(n, int):
+        n = n.item()
     return 2 ** (n - 1).bit_length()
 
 
-def pad_batch(graph_list):
-    max_n_node = nearest_power_of_two(max([g.n_node[0] for g in graph_list]).item())
-    max_n_edge = nearest_power_of_two(max([g.n_edge[0] for g in graph_list]).item())
-    return list(map(lambda g: jraph.pad_with_graphs(g, max_n_node, max_n_edge), graph_list))
+def make_batch(graph_list, pad=True):
+    batch = jraph.batch(graph_list)
 
+    if pad:
+        pad_n_node = nearest_power_of_two(jnp.sum(batch.n_node) + 1)
+        pad_n_edge = nearest_power_of_two(batch.senders.shape[0])
+        pad_n_graph = batch.n_node.shape[0] + 1
+        batch = jraph.pad_with_graphs(batch, pad_n_node, pad_n_edge, pad_n_graph)
 
-def make_batch(graph_list):
-    return jax.tree.map(lambda *args: jnp.stack(args), *graph_list)
+    return batch
 
 
 def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
@@ -50,7 +54,7 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
         senders=senders,
         globals=None,
         n_node=jnp.asarray([len(Gl.nodes)]),
-        n_edge=jnp.asarray([len(Gl.edges)])
+        n_edge=jnp.asarray([2 * len(Gl.edges)])
     )
 
     if return_misc:

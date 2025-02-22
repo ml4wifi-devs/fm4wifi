@@ -13,7 +13,7 @@ from omegaconf import OmegaConf
 
 from lai4wifi.graphs.dataset import load_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch, pad_batch
+from lai4wifi.graphs.utils import make_batch
 
 
 def load(dataset_path, batch_size, key):
@@ -23,11 +23,8 @@ def load(dataset_path, batch_size, key):
 
     while True:
         key, subkey = jax.random.split(key)
-        idxs = jax.random.choice(subkey, len(dataset), (batch_size,), replace=False)
-        batch = [dataset[i] for i in idxs]
-        batch = pad_batch(batch)
-        batch = make_batch(batch)
-        yield batch
+        idxs = jax.random.choice(key, len(dataset), (batch_size,), replace=False)
+        yield make_batch([dataset[i] for i in idxs])
 
 
 @hydra.main(config_path="configs", config_name="gnn", version_base=None)
@@ -52,7 +49,7 @@ def main(cfg):
             active_loss   = mask * mixture_categorical_loss(pred.nodes.active, batch.nodes.active)
             mcs_loss      = mask * mixture_categorical_loss(pred.nodes.mcs, batch.nodes.mcs)
             rssi_loss     = mask * optax.squared_error(pred.nodes.rssi, batch.nodes.rssi).mean(axis=-1)
-            selected_loss = mask * mixture_categorical_loss(pred.nodes.selected, batch.nodes.selected)
+            selected_loss = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.selected, batch.nodes.selected).mean(axis=-1)
             success_loss  = mask * mixture_categorical_loss(pred.nodes.success, batch.nodes.success)
             tx_power_loss = mask * mixture_categorical_loss(pred.nodes.tx_power, batch.nodes.tx_power)
             type_loss     = mask * mixture_categorical_loss(pred.nodes.type, batch.nodes.type)
@@ -65,7 +62,7 @@ def main(cfg):
             active_acc   = mask * (pred.nodes.active.argmax(axis=-1) == batch.nodes.active.argmax(axis=-1))
             mcs_acc      = mask * (pred.nodes.mcs.argmax(axis=-1) == batch.nodes.mcs.argmax(axis=-1))
             rssi_acc     = mask * jnp.isclose(pred.nodes.rssi, batch.nodes.rssi, atol=0.1).mean(axis=-1)
-            selected_acc = mask * (pred.nodes.selected.argmax(axis=-1) == batch.nodes.selected.argmax(axis=-1))
+            selected_acc = mask * jnp.isclose(pred.nodes.selected, batch.nodes.selected, atol=0.1).mean(axis=-1)
             success_acc  = mask * (pred.nodes.success.argmax(axis=-1) == batch.nodes.success.argmax(axis=-1))
             tx_power_acc = mask * (pred.nodes.tx_power.argmax(axis=-1) == batch.nodes.tx_power.argmax(axis=-1))
             type_acc     = mask * (pred.nodes.type.argmax(axis=-1) == batch.nodes.type.argmax(axis=-1))
