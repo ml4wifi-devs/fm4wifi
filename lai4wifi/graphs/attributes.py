@@ -40,12 +40,6 @@ class IsSelected(JaxEnum):
     NA = 2
 
 
-class IsSuccessful(JaxEnum):
-    FALSE = 0
-    TRUE = 1
-    NA = 2
-
-
 class McsValue(JaxEnum):
     MCS_0 = 0
     MCS_1 = 1

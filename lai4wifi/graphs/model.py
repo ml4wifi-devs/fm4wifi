@@ -82,7 +82,7 @@ class Decoder(nn.Module):
             mcs=nn.Dense(len(McsValue), dtype=self.dtype)(x.nodes),
             rssi=nn.Dense(1, dtype=self.dtype)(x.nodes),
             selected=nn.Dense(len(IsSelected), dtype=self.dtype)(x.nodes),
-            success=nn.Dense(len(IsSuccessful), dtype=self.dtype)(x.nodes),
+            success=nn.Dense(1, dtype=self.dtype)(x.nodes),
             tx_power=nn.Dense(len(TxPowerValue), dtype=self.dtype)(x.nodes),
             type=nn.Dense(len(EdgeType), dtype=self.dtype)(x.nodes)
         )
