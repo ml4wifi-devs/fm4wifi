@@ -43,8 +43,7 @@ def main(cfg):
             softmax_loss = optax.softmax_cross_entropy(softmax_logits, softmax_labels)
             return na_loss + na_labels * softmax_loss
 
-        @jax.vmap
-        def vmap_loss_fn(batch, pred):
+        def weighted_loss_fn(batch, pred):
             mask = jraph.get_node_padding_mask(pred)
             active_loss   = mask * mixture_categorical_loss(pred.nodes.active, batch.nodes.active)
             mcs_loss      = mask * mixture_categorical_loss(pred.nodes.mcs, batch.nodes.mcs)
@@ -56,8 +55,7 @@ def main(cfg):
             losses        = jnp.array([active_loss, mcs_loss, rssi_loss, selected_loss, success_loss, tx_power_loss, type_loss]).mean(axis=-1)
             return losses @ loss_weights, losses
 
-        @jax.vmap
-        def vmap_metrics_fn(batch, pred):
+        def metrics_fn(batch, pred):
             mask = jraph.get_node_padding_mask(pred)
             active_acc   = mask * (pred.nodes.active.argmax(axis=-1) == batch.nodes.active.argmax(axis=-1))
             mcs_acc      = mask * (pred.nodes.mcs.argmax(axis=-1) == batch.nodes.mcs.argmax(axis=-1))
@@ -69,9 +67,8 @@ def main(cfg):
             metrics      = jnp.array([active_acc, mcs_acc, rssi_acc, selected_acc, success_acc, tx_power_acc, type_acc]).mean(axis=-1)
             return metrics
 
-        loss, other_losses = vmap_loss_fn(batch, pred)
-        loss, other_losses = loss.mean(), other_losses.mean(axis=0)
-        metrics = vmap_metrics_fn(batch, pred).mean(axis=0)
+        loss, other_losses = weighted_loss_fn(batch, pred)
+        metrics = metrics_fn(batch, pred)
         return loss, (other_losses, metrics)
 
     @jax.jit
