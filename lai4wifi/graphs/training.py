@@ -41,29 +41,36 @@ def main(cfg):
             softmax_logits, softmax_labels = logits[..., :-1], labels[..., :-1]
             na_loss = optax.sigmoid_binary_cross_entropy(na_logits, na_labels)
             softmax_loss = optax.softmax_cross_entropy(softmax_logits, softmax_labels)
-            return na_loss + na_labels * softmax_loss
+            return na_loss + (1 - na_labels) * softmax_loss
 
         def weighted_loss_fn(batch, pred):
             mask = jraph.get_node_padding_mask(pred)
             active_loss   = mask * mixture_categorical_loss(pred.nodes.active, batch.nodes.active)
             mcs_loss      = mask * mixture_categorical_loss(pred.nodes.mcs, batch.nodes.mcs)
             rssi_loss     = mask * optax.squared_error(pred.nodes.rssi, batch.nodes.rssi).mean(axis=-1)
-            selected_loss = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.selected, batch.nodes.selected).mean(axis=-1)
-            success_loss  = mask * mixture_categorical_loss(pred.nodes.success, batch.nodes.success)
+            selected_loss = mask * mixture_categorical_loss(pred.nodes.selected, batch.nodes.selected)
+            success_loss  = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.success, batch.nodes.success).mean(axis=-1)
             tx_power_loss = mask * mixture_categorical_loss(pred.nodes.tx_power, batch.nodes.tx_power)
             type_loss     = mask * mixture_categorical_loss(pred.nodes.type, batch.nodes.type)
             losses        = jnp.array([active_loss, mcs_loss, rssi_loss, selected_loss, success_loss, tx_power_loss, type_loss]).mean(axis=-1)
             return losses @ loss_weights, losses
 
+        def mixture_accuracy(logits, labels):
+            na_logits, na_labels = logits[..., -1], labels[..., -1]
+            softmax_logits, softmax_labels = logits[..., :-1], labels[..., :-1]
+            na_acc = (na_logits > 0.) == na_labels
+            softmax_acc = (softmax_logits.argmax(axis=-1) == softmax_labels.argmax(axis=-1))
+            return na_labels * na_acc + (1 - na_labels) * softmax_acc
+
         def metrics_fn(batch, pred):
             mask = jraph.get_node_padding_mask(pred)
-            active_acc   = mask * (pred.nodes.active.argmax(axis=-1) == batch.nodes.active.argmax(axis=-1))
-            mcs_acc      = mask * (pred.nodes.mcs.argmax(axis=-1) == batch.nodes.mcs.argmax(axis=-1))
+            active_acc   = mask * mixture_accuracy(pred.nodes.active, batch.nodes.active)
+            mcs_acc      = mask * mixture_accuracy(pred.nodes.mcs, batch.nodes.mcs)
             rssi_acc     = mask * jnp.isclose(pred.nodes.rssi, batch.nodes.rssi, atol=0.1).mean(axis=-1)
-            selected_acc = mask * jnp.isclose(pred.nodes.selected, batch.nodes.selected, atol=0.1).mean(axis=-1)
-            success_acc  = mask * (pred.nodes.success.argmax(axis=-1) == batch.nodes.success.argmax(axis=-1))
-            tx_power_acc = mask * (pred.nodes.tx_power.argmax(axis=-1) == batch.nodes.tx_power.argmax(axis=-1))
-            type_acc     = mask * (pred.nodes.type.argmax(axis=-1) == batch.nodes.type.argmax(axis=-1))
+            selected_acc = mask * mixture_accuracy(pred.nodes.selected, batch.nodes.selected)
+            success_acc  = mask * jnp.isclose(jax.nn.sigmoid(pred.nodes.success), batch.nodes.success, atol=0.1).mean(axis=-1)
+            tx_power_acc = mask * mixture_accuracy(pred.nodes.tx_power, batch.nodes.tx_power)
+            type_acc     = mask * mixture_accuracy(pred.nodes.type, batch.nodes.type)
             metrics      = jnp.array([active_acc, mcs_acc, rssi_acc, selected_acc, success_acc, tx_power_acc, type_acc]).mean(axis=-1)
             return metrics
 

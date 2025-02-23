@@ -2,7 +2,7 @@ ckpt:
   intermediate: false
   freq: 2000
 log:
-  type: 'stdout'
+  type: 'wandb'
   freq: 100
 val:
   n_steps: 10
