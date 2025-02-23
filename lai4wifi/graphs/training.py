@@ -81,7 +81,7 @@ def main(cfg):
     @jax.jit
     def step_fn(params, opt_state, key, batch):
         (loss, *other), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, key, batch)
-        updates, opt_state = optimizer.update(grads, opt_state)
+        updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss, *other
 
