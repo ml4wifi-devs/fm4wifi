@@ -105,7 +105,7 @@ def main(cfg):
     params = model.init({'params': init_key}, sample)
     print(model.tabulate(jax.random.PRNGKey(0), sample))
 
-    optimizer = optax.adam(**cfg.optimizer)
+    optimizer = optax.adamw(**cfg.optimizer)
     opt_state = optimizer.init(params)
 
     ckpt_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
@@ -126,11 +126,12 @@ def main(cfg):
         params, opt_state, loss, (other_losses, metrics) = step_fn(params, opt_state, subkey, batch)
 
         log_dict['step'] = step
+        log_dict['train/loss'] = loss.item()
         log_vector(log_dict, 'train', 'loss', other_losses)
         log_vector(log_dict, 'train', 'acc', metrics)
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
-            val_loss, val_other_losses = 0.0, jnp.zeros(7)
+            val_loss, val_other_losses, val_metrics = 0.0, jnp.zeros(7), jnp.zeros(7)
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
@@ -138,10 +139,11 @@ def main(cfg):
                 loss, (other_losses, metrics) = loss_fn(params, subkey, val_batch)
                 val_loss += loss.item()
                 val_other_losses += other_losses
+                val_metrics += metrics
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
             log_vector(log_dict, 'val', 'loss', val_other_losses, cfg.train.val.n_steps)
-            log_vector(log_dict, 'val', 'acc', metrics, cfg.train.val.n_steps)
+            log_vector(log_dict, 'val', 'acc', val_metrics, cfg.train.val.n_steps)
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
             logging.info(log_dict)
