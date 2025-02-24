@@ -52,7 +52,8 @@ def main(cfg):
             success_loss  = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.success, batch.nodes.success).mean(axis=-1)
             tx_power_loss = mask * mixture_categorical_loss(pred.nodes.tx_power, batch.nodes.tx_power)
             type_loss     = mask * mixture_categorical_loss(pred.nodes.type, batch.nodes.type)
-            losses        = jnp.array([active_loss, mcs_loss, rssi_loss, selected_loss, success_loss, tx_power_loss, type_loss]).mean(axis=-1)
+            losses = jnp.array([active_loss, mcs_loss, rssi_loss, selected_loss, success_loss, tx_power_loss, type_loss]).sum(axis=-1)
+            losses /= mask.sum()
             return losses @ loss_weights, losses
 
         def mixture_accuracy(logits, labels):
@@ -60,23 +61,36 @@ def main(cfg):
             softmax_logits, softmax_labels = logits[..., :-1], labels[..., :-1]
             na_acc = (na_logits > 0.5) == na_labels
             softmax_acc = (softmax_logits.argmax(axis=-1) == softmax_labels.argmax(axis=-1))
-            return na_labels * na_acc + (1 - na_labels) * softmax_acc
+            softmax_acc = (1 - na_labels) * softmax_acc
+            return jnp.asarray([na_acc, softmax_acc, 1 - na_labels])
+
+        def isclose_accuracy(value, labels):
+            pred_acc = jnp.isclose(value, labels, atol=0.1).mean(axis=-1)
+            na_acc = jnp.ones_like(pred_acc)
+            return jnp.asarray([na_acc, pred_acc, na_acc])
 
         def metrics_fn(batch, pred):
-            mask = jraph.get_node_padding_mask(pred)
+            mask = jraph.get_node_padding_mask(pred)[None]
             active_acc   = mask * mixture_accuracy(pred.nodes.active, batch.nodes.active)
             mcs_acc      = mask * mixture_accuracy(pred.nodes.mcs, batch.nodes.mcs)
-            rssi_acc     = mask * jnp.isclose(pred.nodes.rssi, batch.nodes.rssi, atol=0.1).mean(axis=-1)
+            rssi_acc     = mask * isclose_accuracy(pred.nodes.rssi, batch.nodes.rssi)
             selected_acc = mask * mixture_accuracy(pred.nodes.selected, batch.nodes.selected)
-            success_acc  = mask * jnp.isclose(jax.nn.sigmoid(pred.nodes.success), batch.nodes.success, atol=0.1).mean(axis=-1)
+            success_acc  = mask * isclose_accuracy(jax.nn.sigmoid(pred.nodes.success), batch.nodes.success)
             tx_power_acc = mask * mixture_accuracy(pred.nodes.tx_power, batch.nodes.tx_power)
             type_acc     = mask * mixture_accuracy(pred.nodes.type, batch.nodes.type)
-            metrics      = jnp.array([active_acc, mcs_acc, rssi_acc, selected_acc, success_acc, tx_power_acc, type_acc]).mean(axis=-1)
-            return metrics
+            metrics = jnp.array([active_acc, mcs_acc, rssi_acc, selected_acc, success_acc, tx_power_acc, type_acc])
+
+            metrics = metrics.at[:, -1].mul(mask)
+            metrics = metrics.sum(axis=-1)
+            metrics, pred_mask = metrics[:, :-1], metrics[:, -1]
+            na_metrics = metrics[:, 0] / mask.sum()
+            pred_metrics = metrics[:, 1] / pred_mask.sum()
+            return na_metrics, pred_metrics
 
         loss, other_losses = weighted_loss_fn(batch, pred)
-        metrics = metrics_fn(batch, pred)
-        return loss, (other_losses, metrics)
+        na_metrics, pred_metrics = metrics_fn(batch, pred)
+        return loss, (other_losses, na_metrics, pred_metrics)
+
 
     @jax.jit
     def step_fn(params, opt_state, key, batch):
@@ -86,13 +100,13 @@ def main(cfg):
         return params, opt_state, loss, *other
 
     def log_vector(log_dict, split, type, values, n_steps=1):
-        log_dict[f'{split}/active_{type}'] = values[0].item() / n_steps
-        log_dict[f'{split}/mcs_{type}'] = values[1].item() / n_steps
-        log_dict[f'{split}/rssi_{type}'] = values[2].item() / n_steps
-        log_dict[f'{split}/selected_{type}'] = values[3].item() / n_steps
-        log_dict[f'{split}/success_{type}'] = values[4].item() / n_steps
-        log_dict[f'{split}/tx_power_{type}'] = values[5].item() / n_steps
-        log_dict[f'{split}/type_{type}'] = values[6].item() / n_steps
+        log_dict[f'{split}/{type}/active'] = values[0].item() / n_steps
+        log_dict[f'{split}/{type}/mcs'] = values[1].item() / n_steps
+        log_dict[f'{split}/{type}/rssi'] = values[2].item() / n_steps
+        log_dict[f'{split}/{type}/selected'] = values[3].item() / n_steps
+        log_dict[f'{split}/{type}/success'] = values[4].item() / n_steps
+        log_dict[f'{split}/{type}/tx_power'] = values[5].item() / n_steps
+        log_dict[f'{split}/{type}/type'] = values[6].item() / n_steps
 
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
@@ -123,27 +137,30 @@ def main(cfg):
         log_dict = {}
 
         train_key, subkey = jax.random.split(train_key)
-        params, opt_state, loss, (other_losses, metrics) = step_fn(params, opt_state, subkey, batch)
+        params, opt_state, loss, (other_losses, na_metrics, pred_metrics) = step_fn(params, opt_state, subkey, batch)
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
         log_vector(log_dict, 'train', 'loss', other_losses)
-        log_vector(log_dict, 'train', 'acc', metrics)
+        log_vector(log_dict, 'train', 'na_acc', na_metrics)
+        log_vector(log_dict, 'train', 'pred_acc', pred_metrics)
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
-            val_loss, val_other_losses, val_metrics = 0.0, jnp.zeros(7), jnp.zeros(7)
+            val_loss, val_other_losses, val_na_metrics, val_pred_metrics = 0.0, jnp.zeros(7), jnp.zeros(7), jnp.zeros(7)
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch = next(val_data)
-                loss, (other_losses, metrics) = loss_fn(params, subkey, val_batch)
+                loss, (other_losses, na_metrics, pred_metrics) = loss_fn(params, subkey, val_batch)
                 val_loss += loss.item()
                 val_other_losses += other_losses
-                val_metrics += metrics
+                val_na_metrics += na_metrics
+                val_pred_metrics += pred_metrics
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
             log_vector(log_dict, 'val', 'loss', val_other_losses, cfg.train.val.n_steps)
-            log_vector(log_dict, 'val', 'acc', val_metrics, cfg.train.val.n_steps)
+            log_vector(log_dict, 'val', 'na_acc', val_na_metrics, cfg.train.val.n_steps)
+            log_vector(log_dict, 'val', 'pred_acc', val_pred_metrics, cfg.train.val.n_steps)
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
             logging.info(log_dict)
