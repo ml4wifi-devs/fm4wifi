@@ -58,7 +58,7 @@ def main(cfg):
         def mixture_accuracy(logits, labels):
             na_logits, na_labels = logits[..., -1], labels[..., -1]
             softmax_logits, softmax_labels = logits[..., :-1], labels[..., :-1]
-            na_acc = (na_logits > 0.) == na_labels
+            na_acc = (na_logits > 0.5) == na_labels
             softmax_acc = (softmax_logits.argmax(axis=-1) == softmax_labels.argmax(axis=-1))
             return na_labels * na_acc + (1 - na_labels) * softmax_acc
 
