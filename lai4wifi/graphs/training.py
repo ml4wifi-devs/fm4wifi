@@ -80,11 +80,11 @@ def main(cfg):
             type_acc     = mask * mixture_accuracy(pred.nodes.type, batch.nodes.type)
             metrics = jnp.array([active_acc, mcs_acc, rssi_acc, selected_acc, success_acc, tx_power_acc, type_acc])
 
-            metrics = metrics.at[:, -1].mul(mask)
-            metrics = metrics.sum(axis=-1)
             metrics, pred_mask = metrics[:, :-1], metrics[:, -1]
-            na_metrics = metrics[:, 0] / mask.sum()
-            pred_metrics = metrics[:, 1] / pred_mask.sum()
+            metrics = metrics.at[:, -1].mul(pred_mask)
+            metrics = metrics.sum(axis=-1)
+            na_metrics = metrics[:, 0] / mask.sum(axis=-1)
+            pred_metrics = metrics[:, 1] / pred_mask.sum(axis=-1)
             return na_metrics, pred_metrics
 
         loss, other_losses = weighted_loss_fn(batch, pred)
