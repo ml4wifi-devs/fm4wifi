@@ -16,7 +16,7 @@ from lai4wifi.graphs.utils import make_batch
 def graph_to_embeddings_dataset(dataset, model, params):
     for configurations in tqdm(dataset):
         batch = make_batch(list(map(lambda c: c.graph, configurations)))
-        batch = model.apply(params, batch)
+        batch = jax.jit(model.apply)(params, batch)
         batch = jraph.unpad_with_graphs(batch)
         yield jraph.unbatch(batch)
 
