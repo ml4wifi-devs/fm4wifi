@@ -10,14 +10,31 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
+from lai4wifi.graphs.dataset import load_dataset
 
+
+def get_network_desc(target_conf, context):
+    # TODO: Implement network description
+    network_desc = jnp.zeros(target_conf.embedding.nodes.shape)
+    return target_conf.embedding.nodes, network_desc
+
+
+def draw_configurations(scenario, n_timesteps, key):
+    *context_idxs, target_idx = jax.random.choice(key, len(scenario), (n_timesteps + 1,))
+    context = [scenario[i].embedding.nodes for i in context_idxs]
+    target_conf = scenario[target_idx]
+    target_conf, network_desc = get_network_desc(target_conf, context)
+    return jnp.stack([network_desc, *context, target_conf], axis=1)
 
 
 def load(dataset_path, batch_size, n_timesteps, key):
     dataset = load_dataset(dataset_path)
 
     while True:
-        yield batch
+        key, idx_key, conf_key = jax.random.split(key, 3)
+        idxs = jax.random.choice(idx_key, len(dataset), (batch_size,))
+        batch = [draw_configurations(dataset[i], n_timesteps, conf_key) for i in idxs]
+        yield jnp.vstack(batch)
 
 
 @hydra.main(config_path="configs", config_name="debug", version_base=None)

@@ -16,9 +16,14 @@ from lai4wifi.graphs.utils import make_batch
 def graph_to_embeddings_dataset(dataset, model, params):
     for configurations in tqdm(dataset):
         batch = make_batch(list(map(lambda c: c.graph, configurations)))
-        batch = jax.jit(model.apply)(params, batch, method='encode')
+        batch = jax.jit(model.apply, static_argnames='method')(params, batch, method='encode')
         batch = jraph.unpad_with_graphs(batch)
-        yield jraph.unbatch(batch)
+        batch = jraph.unbatch(batch)
+
+        for i, embeddings in enumerate(batch):
+            configurations[i].embedding = embeddings
+
+        yield configurations
 
 
 def convert_dataset(dataset_path, save_path, model, params):
@@ -42,4 +47,6 @@ def load_model(ckpt_path):
 if __name__ == '__main__':
     model, params = load_model('../graphs/runs/gnn_ae_base')
     convert_dataset('../graphs/datasets/t_optimal_1k_50/train.pkl.lz4', 'datasets/t_optimal_1k_50/train.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/t_optimal_100_10/train.pkl.lz4', 'datasets/t_optimal_100_10/train.pkl.lz4', model, params)
     convert_dataset('../graphs/datasets/t_optimal_1k_50/val.pkl.lz4', 'datasets/t_optimal_1k_50/val.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/t_optimal_100_10/val.pkl.lz4', 'datasets/t_optimal_100_10/val.pkl.lz4', model, params)
