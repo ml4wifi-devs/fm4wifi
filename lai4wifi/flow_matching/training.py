@@ -12,15 +12,15 @@ from omegaconf import OmegaConf
 from lai4wifi.flow_matching.model import FlowMatching
 
 
-def load(batch_size):
-    n_nodes, timesteps, latent_size = 64, 6, 32
-    batch = jax.random.normal(jax.random.key(0), (batch_size, n_nodes, timesteps + 2, latent_size))
+
+def load(dataset_path, batch_size, n_timesteps, key):
+    dataset = load_dataset(dataset_path)
 
     while True:
         yield batch
 
 
-@hydra.main(config_path="configs", config_name="fm", version_base=None)
+@hydra.main(config_path="configs", config_name="debug", version_base=None)
 def main(cfg):
 
     @jax.jit
@@ -35,7 +35,7 @@ def main(cfg):
         else:
             raise ValueError(f'Invalid schedule: {schedule}')
 
-        z = jax.random.normal(z_key, cx.shape[:2] + (latent_size,))
+        z = jax.random.normal(z_key, cx.shape[:2] + (cfg.model.latent_size,))
         t_b = t.reshape((-1,) + (1,) * (len(z.shape) - 1))
 
         x = cx[..., -1, :]
@@ -58,19 +58,18 @@ def main(cfg):
         return model.apply(params, batch, rngs=key, method='gen')
 
     key = jax.random.PRNGKey(cfg.train.seed)
-    init_key, train_key, val_key = jax.random.split(key, 3)
+    init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
 
-    data = load(cfg.train.batch_size)
-    val_data = iter(load(cfg.train.batch_size))
+    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key)
+    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key))
     sample = next(iter(data))
     sample = (sample, jnp.zeros(sample.shape[0]))
-    latent_size = sample[0].shape[-1]
 
     model = FlowMatching(**cfg.model)
     params = model.init({'params': init_key}, *sample)
     print(model.tabulate(jax.random.PRNGKey(0), *sample))
 
-    optimizer = optax.adam(**cfg.optimizer)
+    optimizer = optax.adamw(**cfg.optimizer)
     opt_state = optimizer.init(params)
 
     ckpt_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir

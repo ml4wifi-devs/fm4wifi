@@ -1,0 +1,13 @@
+ckpt:
+  intermediate: false
+  freq: 1000
+log:
+  type: 'wandb'
+  freq: 50
+val:
+  n_steps: 10
+  freq: 100
+n_steps: 2000
+batch_size: 16
+n_timesteps: 14
+seed: 42

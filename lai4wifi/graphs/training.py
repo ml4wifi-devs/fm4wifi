@@ -23,7 +23,7 @@ def load(dataset_path, batch_size, key):
 
     while True:
         key, subkey = jax.random.split(key)
-        idxs = jax.random.choice(key, len(dataset), (batch_size,), replace=False)
+        idxs = jax.random.choice(subkey, len(dataset), (batch_size,))
         yield make_batch([dataset[i] for i in idxs])
 
 

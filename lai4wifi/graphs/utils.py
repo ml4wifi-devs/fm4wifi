@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 import jax
 import jax.numpy as jnp
@@ -11,6 +12,7 @@ from lai4wifi.graphs.attributes import Connection, EdgeType, IsSelected
 @dataclass
 class Graph:
     graph: jraph.GraphsTuple
+    embedding: Optional[jax.Array]
     pos: jax.Array
     walls: jax.Array
     aps: jax.Array
@@ -64,6 +66,6 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
         selected_idx = next(i for i, ((_, _), d) in enumerate(Gl.nodes(data=True)) if d['selected'] == IsSelected.TRUE)
         aps = jnp.unique(idx_to_ap)
         stas = jnp.unique(idx_to_sta)
-        return Graph(graph, pos, walls, aps, stas, idx_to_edge, idx_to_ap, idx_to_sta, selected_idx)
+        return Graph(graph, None, pos, walls, aps, stas, idx_to_edge, idx_to_ap, idx_to_sta, selected_idx)
 
     return graph

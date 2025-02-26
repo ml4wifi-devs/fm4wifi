@@ -1,9 +1,11 @@
 defaults:
   - _self_
-  - model: debug
-  - optimizer: debug
-  - train: debug
-name: flow_matching
+  - model: base
+  - optimizer: base
+  - train: base
+name: flow_matching_base
+dataset: 'datasets/t_optimal_1k_50/train.pkl.lz4'
+val_dataset: 'datasets/t_optimal_1k_50/val.pkl.lz4'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
