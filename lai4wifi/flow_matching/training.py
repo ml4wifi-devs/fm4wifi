@@ -1,5 +1,7 @@
 import logging
 import os
+from copy import deepcopy
+from functools import partial
 
 import hydra
 import jax
@@ -10,77 +12,141 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
+from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import load_dataset
+from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import nearest_power_of_two
 
 
-def get_network_desc(target_conf, context):
-    # TODO: Implement network description
-    network_desc = jnp.zeros(target_conf.embedding.nodes.shape)
-    return target_conf.embedding.nodes, network_desc
+def get_network_desc(target_conf, embed_fn):
+    desc_graph = deepcopy(target_conf.graph)
+    edge_types = jnp.argmax(desc_graph.nodes.type, axis=-1)
+
+    active = jnp.where((edge_types == EdgeType.STA.value)[:, None], jnp.array(IsActive.TRUE)[None], jnp.array(IsActive.NA)[None])
+    mcs = jnp.zeros((edge_types.shape[0], len(McsValue)))
+    mcs = mcs.at[:].set(jnp.array(McsValue.NA))
+    rssi = jnp.zeros((edge_types.shape[0], 1))
+    selected = jnp.zeros((edge_types.shape[0], len(IsSelected)))
+    selected = selected.at[target_conf.selected_idx].set(jnp.array(IsSelected.TRUE))
+    success = jnp.zeros((edge_types.shape[0], 1))
+    tx_power = jnp.zeros((edge_types.shape[0], len(TxPowerValue)))
+    tx_power = tx_power.at[:].set(jnp.array(TxPowerValue.NA))
+
+    desc_graph = desc_graph._replace(nodes=Connection(
+        active=active,
+        mcs=mcs,
+        rssi=rssi,
+        selected=selected,
+        success=success,
+        tx_power=tx_power,
+        type=desc_graph.nodes.type
+    ))
+    network_desc = embed_fn(desc_graph).nodes
+
+    return network_desc
 
 
-def draw_configurations(scenario, n_timesteps, key):
+def draw_configurations(scenario, n_timesteps, key, embed_fn):
     *context_idxs, target_idx = jax.random.choice(key, len(scenario), (n_timesteps + 1,))
     context = [scenario[i].embedding.nodes for i in context_idxs]
-    target_conf = scenario[target_idx]
-    target_conf, network_desc = get_network_desc(target_conf, context)
+    target_conf = scenario[target_idx].embedding.nodes
+    network_desc = get_network_desc(scenario[target_idx], embed_fn)
     return jnp.stack([network_desc, *context, target_conf], axis=1)
 
 
-def load(dataset_path, batch_size, n_timesteps, key):
+def pad_and_mask(batch):
+    sizes = [b.shape[0] for b in batch]
+    padding = nearest_power_of_two(sum(sizes)) - sum(sizes)
+    sizes = [0] + sizes + [padding]
+    sizes = jnp.cumsum(jnp.array(sizes))
+
+    batch += [jnp.zeros((padding,) + batch[0].shape[1:])]
+    batch = jnp.vstack(batch)
+
+    attn_mask = jnp.zeros((batch.shape[0], batch.shape[0]))
+    for start, end in zip(sizes[:-1], sizes[1:]):
+        attn_mask = attn_mask.at[start:end, start:end].set(1)
+
+    pad_mask = jnp.ones((1, batch.shape[0]))
+    pad_mask = pad_mask.at[..., -padding:].set(0.)
+
+    return batch[None], attn_mask[None], pad_mask
+
+
+def load(dataset_path, batch_size, n_timesteps, key, embed_fn):
     dataset = load_dataset(dataset_path)
 
     while True:
-        key, idx_key, conf_key = jax.random.split(key, 3)
-        idxs = jax.random.choice(idx_key, len(dataset), (batch_size,))
-        batch = [draw_configurations(dataset[i], n_timesteps, conf_key) for i in idxs]
-        yield jnp.vstack(batch)
+        nodes = 0
+        batch = []
+
+        while True:
+            key, idx_key, conf_key = jax.random.split(key, 3)
+            idx = jax.random.choice(idx_key, len(dataset))
+            graph_size = dataset[idx][0].embedding.nodes.shape[0]
+
+            if nodes + graph_size < batch_size:
+                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, embed_fn))
+                nodes += graph_size
+            else:
+                break
+
+        yield pad_and_mask(batch)
 
 
 @hydra.main(config_path="configs", config_name="debug", version_base=None)
 def main(cfg):
 
     @jax.jit
-    def loss_fn(params, key, cx, schedule='uniform'):
+    def loss_fn(params, key, cx, attn_mask, pad_mask, schedule='uniform'):
         z_key, t_key, model_key = jax.random.split(key, 3)
 
         if schedule == 'log-normal':
-            t = jax.random.normal(t_key, (cx.shape[0],))
+            t = jax.random.normal(t_key, (cx.shape[1],))
             t = 1 / (1 + jnp.exp(-t))
         elif schedule == 'uniform':
-            t = jax.random.uniform(t_key, (cx.shape[0],), minval=0.0, maxval=0.99)
+            t = jax.random.uniform(t_key, (cx.shape[1],), minval=0.0, maxval=0.99)
         else:
             raise ValueError(f'Invalid schedule: {schedule}')
 
         z = jax.random.normal(z_key, cx.shape[:2] + (cfg.model.latent_size,))
-        t_b = t.reshape((-1,) + (1,) * (len(z.shape) - 1))
+        t_b = t.reshape((1, -1, 1))
 
         x = cx[..., -1, :]
         x_t = (1 - t_b) * z + t_b * x
         v_t = x - z
         cx = cx.at[..., -1, :].set(x_t)
 
-        v_pred = model.apply(params, cx, t, rngs=model_key)
-        return optax.squared_error(v_pred, v_t).mean()
+        v_pred = model.apply(params, cx, t, attn_mask, rngs=model_key)
+        loss = optax.squared_error(v_pred, v_t).mean(axis=-1)
+        loss = (pad_mask * loss).sum() / pad_mask.sum()
+        return loss
 
     @jax.jit
-    def step_fn(params, opt_state, key, batch):
-        loss, grads = jax.value_and_grad(loss_fn)(params, key, batch)
-        updates, opt_state = optimizer.update(grads, opt_state)
+    def step_fn(params, opt_state, key, batch, attn_mask, pad_mask):
+        loss, grads = jax.value_and_grad(loss_fn)(params, key, batch, attn_mask, pad_mask)
+        updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
     @jax.jit
-    def generate_fn(params, key, batch):
-        return model.apply(params, batch, rngs=key, method='gen')
+    def generate_fn(params, key, batch, mask):
+        return model.apply(params, batch, mask, rngs=key, method='gen')
+
+    with ocp.CheckpointManager(os.path.abspath(cfg.train.gnn_path), item_names=['params']) as ckpt_manager:
+        gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+
+    gnn_cfg = OmegaConf.load(os.path.join(cfg.train.gnn_path, 'config.yaml'))
+    gnn = GnnAutoencoder(**gnn_cfg.model)
+    embed_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
 
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
 
-    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key)
-    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key))
+    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key, embed_fn)
+    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, embed_fn))
     sample = next(iter(data))
-    sample = (sample, jnp.zeros(sample.shape[0]))
+    sample = (sample[0], jnp.zeros((1, sample[0].shape[1])), sample[1])
 
     model = FlowMatching(**cfg.model)
     params = model.init({'params': init_key}, *sample)
@@ -100,11 +166,11 @@ def main(cfg):
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
 
-    for step, batch in zip(range(cfg.train.n_steps), data):
+    for step, (batch, attn_mask, pad_mask) in zip(range(cfg.train.n_steps), data):
         log_dict = {}
 
         train_key, subkey = jax.random.split(train_key)
-        params, opt_state, loss = step_fn(params, opt_state, subkey, batch)
+        params, opt_state, loss = step_fn(params, opt_state, subkey, batch, attn_mask, pad_mask)
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
@@ -114,8 +180,8 @@ def main(cfg):
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
-                val_batch = next(val_data)
-                loss = loss_fn(params, subkey, val_batch)
+                val_batch, val_attn_mask, val_pad_mask = next(val_data)
+                loss = loss_fn(params, subkey, val_batch, val_attn_mask, val_pad_mask)
                 val_loss += loss.item()
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps

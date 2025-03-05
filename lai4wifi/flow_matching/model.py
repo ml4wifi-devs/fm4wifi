@@ -57,7 +57,7 @@ class Transformer(nn.Module):
         for block in range(self.num_layers):
             x = TransformerBlock(self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, mask, training=training)
             t = nn.Dense(x.shape[-1], dtype=self.dtype, use_bias=False)(t)
-            x = x + t[:, None, :]
+            x = x + t
 
         x = nn.LayerNorm()(x)
         return x
@@ -75,9 +75,9 @@ class TimeEmbedding(nn.Module):
         num_timescales = float(embedding_dim // 2)
         log_timescale_increment = jnp.log(max_timescale / min_timescale) / num_timescales
         inv_timescales = min_timescale * jnp.exp(jnp.arange(num_timescales, dtype=jnp.float32) * -log_timescale_increment)
-        time = jnp.expand_dims(timesteps, 1) * jnp.expand_dims(inv_timescales, 0)
-        signal = jnp.concatenate([jnp.cos(time), jnp.sin(time)], axis=1)
-        signal = jnp.reshape(signal, [jnp.shape(timesteps)[0], embedding_dim])
+        time = jnp.expand_dims(timesteps, -1) * jnp.expand_dims(inv_timescales, 0)
+        signal = jnp.concatenate([jnp.cos(time), jnp.sin(time)], axis=-1)
+        signal = signal.reshape([*timesteps.shape, embedding_dim])
         return signal
 
     @nn.compact
@@ -95,22 +95,22 @@ class FlowMatching(nn.Module):
     dtype: jnp.dtype
 
     @nn.compact
-    def __call__(self, x, t, training=True):
+    def __call__(self, x, t, mask, training=True):
         x = x.reshape(x.shape[0], x.shape[1], -1)
         t = TimeEmbedding(self.ff_dim, x.shape[-1], self.dtype)(t)
-        x = Transformer(self.num_layers, self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, t, training=training)
+        x = Transformer(self.num_layers, self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, t, mask, training=training)
         x = nn.Dense(self.latent_size, dtype=self.dtype)(x)
         return x
 
-    def gen(self, context, n_steps=10):
+    def gen(self, context, mask, n_steps=10):
         def scan_fn(unet, x, t):
             cx = jnp.concatenate([context, x], axis=2)
-            t = jnp.full(x.shape[0], t)
-            v = unet(cx, t, training=False)[..., None, :]
+            t = jnp.full(x.shape[:2], t)
+            v = unet(cx, t, mask, training=False)[..., None, :]
             x = x + v / n_steps
             return x, None
 
         z = jax.random.normal(self.make_rng('lai'), context.shape[:2] + (1, self.latent_size,), dtype=jnp.float32)
         scan = nn.scan(scan_fn, variable_broadcast='params')
         x, _ = scan(self, z, jnp.linspace(0.0, 1.0, n_steps, endpoint=False))
-        return x
+        return x[..., 0, :]

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from random import choice
 from typing import Optional
 
 import jax
@@ -63,7 +64,7 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
         idx_to_edge = jnp.array([(u, v) for (u, v), d in Gl.nodes(data=True) if d['type'] == EdgeType.STA])
         idx_to_ap = jnp.array([u for (u, _), d in Gl.nodes(data=True) if d['type'] == EdgeType.STA])
         idx_to_sta = jnp.array([v for (_, v), d in Gl.nodes(data=True) if d['type'] == EdgeType.STA])
-        selected_idx = next(i for i, ((_, _), d) in enumerate(Gl.nodes(data=True)) if d['selected'] == IsSelected.TRUE)
+        selected_idx = choice([i for i, ((_, _), d) in enumerate(Gl.nodes(data=True)) if d['selected'] == IsSelected.TRUE])
         aps = jnp.unique(idx_to_ap)
         stas = jnp.unique(idx_to_sta)
         return Graph(graph, None, pos, walls, aps, stas, idx_to_edge, idx_to_ap, idx_to_sta, selected_idx)

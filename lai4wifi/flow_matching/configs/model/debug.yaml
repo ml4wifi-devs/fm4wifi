@@ -1,6 +1,6 @@
 num_layers: 2
 num_heads: 4
 ff_dim: 256
-latent_size: 32
+latent_size: 128
 drop_rate: 0.2
 dtype: "float32"
