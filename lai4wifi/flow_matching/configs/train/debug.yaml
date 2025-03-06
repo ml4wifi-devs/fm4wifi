@@ -11,4 +11,3 @@ n_steps: 1000
 batch_size: 256
 n_timesteps: 6
 seed: 42
-gnn_path: '../graphs/runs/gnn_ae_base
