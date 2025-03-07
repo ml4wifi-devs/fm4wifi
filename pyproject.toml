@@ -21,11 +21,10 @@ dependencies = [
     "jax-ai-stack~=2025.2.5",
     "jraph~=0.0.6.dev0",
     "lz4~=4.4.3",
-    "mapc-optimal~=0.1.1",
-    "mapc-sim~=0.1.11",
-    "matplotlib~=3.9.4",
+    "mapc-sim~=0.1.12",
+    "matplotlib~=3.10.1",
     "networkx~=3.4.2",
-    "wandb~=0.19.5",
+    "wandb~=0.19.8",
 ]
 
 [project.optional-dependencies]

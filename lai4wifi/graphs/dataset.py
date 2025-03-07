@@ -4,13 +4,13 @@ import cloudpickle
 import jax.numpy as jnp
 import lz4.frame
 import networkx as nx
-from mapc_optimal.constants import MAX_TX_POWER
 from tqdm import tqdm
 
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.utils import nx_to_jraph
 
 
+MAX_TX_POWER = 20.0
 CCA_THRESHOLD = -82.0
 RSSI_MEAN = -60.0
 RSSI_STD = 20.0
