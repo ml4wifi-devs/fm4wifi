@@ -24,6 +24,7 @@ dependencies = [
     "mapc-sim~=0.1.12",
     "matplotlib~=3.10.1",
     "networkx~=3.4.2",
+    "tqdm~=4.67.1",
     "wandb~=0.19.8",
 ]
 

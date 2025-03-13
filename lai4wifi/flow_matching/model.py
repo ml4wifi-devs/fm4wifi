@@ -102,7 +102,7 @@ class FlowMatching(nn.Module):
         x = nn.Dense(self.latent_size, dtype=self.dtype)(x)
         return x
 
-    def gen(self, context, mask, n_steps=10):
+    def gen(self, context, mask=None, n_steps=10):
         def scan_fn(unet, x, t):
             cx = jnp.concatenate([context, x], axis=2)
             t = jnp.full(x.shape[:2], t)

@@ -18,7 +18,7 @@ from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import nearest_power_of_two
 
 
-def get_network_desc(target_conf, embed_fn):
+def get_network_desc(target_conf, encode_fn):
     desc_graph = deepcopy(target_conf.graph)
     edge_types = jnp.argmax(desc_graph.nodes.type, axis=-1)
 
@@ -27,6 +27,7 @@ def get_network_desc(target_conf, embed_fn):
     mcs = mcs.at[:].set(jnp.array(McsValue.NA))
     rssi = jnp.zeros((edge_types.shape[0], 1))
     selected = jnp.zeros((edge_types.shape[0], len(IsSelected)))
+    selected = selected.at[:].set(jnp.array(IsSelected.NA))
     selected = selected.at[target_conf.selected_idx].set(jnp.array(IsSelected.TRUE))
     success = jnp.zeros((edge_types.shape[0], 1))
     tx_power = jnp.zeros((edge_types.shape[0], len(TxPowerValue)))
@@ -41,16 +42,16 @@ def get_network_desc(target_conf, embed_fn):
         tx_power=tx_power,
         type=desc_graph.nodes.type
     ))
-    network_desc = embed_fn(desc_graph).nodes
+    network_desc = encode_fn(desc_graph).nodes
 
     return network_desc
 
 
-def draw_configurations(scenario, n_timesteps, key, embed_fn):
+def draw_configurations(scenario, n_timesteps, key, encode_fn):
     *context_idxs, target_idx = jax.random.choice(key, len(scenario), (n_timesteps + 1,))
     context = [scenario[i].embedding.nodes for i in context_idxs]
     target_conf = scenario[target_idx].embedding.nodes
-    network_desc = get_network_desc(scenario[target_idx], embed_fn)
+    network_desc = get_network_desc(scenario[target_idx], encode_fn)
     return jnp.stack([network_desc, *context, target_conf], axis=1)
 
 
@@ -73,7 +74,7 @@ def pad_and_mask(batch):
     return batch[None], attn_mask[None], pad_mask
 
 
-def load(dataset_path, batch_size, n_timesteps, key, embed_fn):
+def load(dataset_path, batch_size, n_timesteps, key, encode_fn):
     dataset = load_dataset(dataset_path)
 
     while True:
@@ -86,7 +87,7 @@ def load(dataset_path, batch_size, n_timesteps, key, embed_fn):
             graph_size = dataset[idx][0].embedding.nodes.shape[0]
 
             if nodes + graph_size < batch_size:
-                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, embed_fn))
+                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, encode_fn))
                 nodes += graph_size
             else:
                 break
@@ -138,13 +139,13 @@ def main(cfg):
 
     gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
     gnn = GnnAutoencoder(**gnn_cfg.model)
-    embed_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
+    encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
 
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
 
-    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key, embed_fn)
-    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, embed_fn))
+    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key, encode_fn)
+    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, encode_fn))
     sample = next(iter(data))
     sample = (sample[0], jnp.zeros((1, sample[0].shape[1])), sample[1])
 
