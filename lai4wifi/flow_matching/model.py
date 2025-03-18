@@ -106,11 +106,11 @@ class FlowMatching(nn.Module):
         def scan_fn(unet, x, t):
             cx = jnp.concatenate([context, x], axis=2)
             t = jnp.full(x.shape[:2], t)
-            v = unet(cx, t, mask, training=False)[..., None, :]
+            v = unet(cx, t, mask, training=False)
             x = x + v / n_steps
             return x, None
 
-        z = jax.random.normal(self.make_rng('lai'), context.shape[:2] + (1, self.latent_size,), dtype=jnp.float32)
+        z = jax.random.normal(self.make_rng('lai'), context.shape[:2] + (self.latent_size,), dtype=jnp.float32)
         scan = nn.scan(scan_fn, variable_broadcast='params')
         x, _ = scan(self, z, jnp.linspace(0.0, 1.0, n_steps, endpoint=False))
         return x[..., 0, :]

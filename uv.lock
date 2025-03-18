@@ -590,7 +590,7 @@ requires-dist = [
     { name = "jax-ai-stack", specifier = "~=2025.2.5" },
     { name = "jraph", specifier = "~=0.0.6.dev0" },
     { name = "lz4", specifier = "~=4.4.3" },
-    { name = "mapc-sim", specifier = "~=0.1.12" },
+    { name = "mapc-sim", specifier = "~=0.2.0" },
     { name = "matplotlib", specifier = "~=3.10.1" },
     { name = "networkx", specifier = "~=3.4.2" },
     { name = "tqdm", specifier = "~=4.67.1" },
@@ -619,15 +619,15 @@ wheels = [
 
 [[package]]
 name = "mapc-sim"
-version = "0.1.12"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jax" },
     { name = "tensorflow-probability", extra = ["jax"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/da/03/d5144e01f8538028b8c435df1bcc7298be0f4ff48e41f597151b8c5e474a/mapc_sim-0.1.12.tar.gz", hash = "sha256:c42814f2466e9dc1dda24a10ab17562f081c52ed77e2ec8675b5cc62f35e75da", size = 19381 }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/6b/23f8597ce3462cdfafd94da72c259a3f73a209af63f229ed19c34efa2d43/mapc_sim-0.2.0.tar.gz", hash = "sha256:83be40101fdb769782ef434bf9fe26d083b47ab4ecca0a6d7035e397b63bd93a", size = 20155 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/d9/19a516d55d5ea9636aa69cabb1893537013ce62500b550acd4a5f62d6186/mapc_sim-0.1.12-py3-none-any.whl", hash = "sha256:2a9d126bb14f2868aff6eb48d98d4b4d9982d56d9a479d0087a3aa44812dcc13", size = 16027 },
+    { url = "https://files.pythonhosted.org/packages/08/80/73e786191e9e886a00a4517fd8f0fd6d7035ac9758fa6d246fe5649a137e/mapc_sim-0.2.0-py3-none-any.whl", hash = "sha256:567a5866ceeea7555c29dcf512830118ad4e6748c9e87e1907a41e5bc23550fc", size = 16544 },
 ]
 
 [[package]]
