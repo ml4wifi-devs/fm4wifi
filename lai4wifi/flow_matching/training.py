@@ -15,10 +15,10 @@ from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import load_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import nearest_power_of_two
+from lai4wifi.graphs.utils import eig_laplacian, nearest_power_of_two
 
 
-def get_network_desc(target_conf, encode_fn):
+def get_network_desc(target_conf, encode_fn, eig_k):
     desc_graph = deepcopy(target_conf.graph)
     edge_types = jnp.argmax(desc_graph.nodes.type, axis=-1)
 
@@ -43,38 +43,51 @@ def get_network_desc(target_conf, encode_fn):
         type=desc_graph.nodes.type
     ))
     network_desc = encode_fn(desc_graph).nodes
+    evals, evects = eig_laplacian(desc_graph.senders, desc_graph.receivers, desc_graph.n_node[0], eig_k)
 
-    return network_desc
+    return network_desc, evals, evects
 
 
-def draw_configurations(scenario, n_timesteps, key, encode_fn):
+def draw_configurations(scenario, n_timesteps, eig_k, key, encode_fn):
     *context_idxs, target_idx = jax.random.choice(key, len(scenario), (n_timesteps + 1,))
     context = [scenario[i].embedding.nodes for i in context_idxs]
     target_conf = scenario[target_idx].embedding.nodes
-    network_desc = get_network_desc(scenario[target_idx], encode_fn)
-    return jnp.stack([network_desc, *context, target_conf], axis=1)
+    network_desc, evals, evects = get_network_desc(scenario[target_idx], encode_fn, eig_k)
+    return jnp.stack([network_desc, *context, target_conf], axis=1), evals, evects
+
+
+def make_pos_emb(evals, evects):
+    evals = jnp.expand_dims(evals, axis=(0, -1))
+    evals = jnp.repeat(evals, evects.shape[0], axis=0)
+    evects = jnp.expand_dims(evects, axis=-1)
+    return jnp.concatenate((evects, evals), axis=-1)
 
 
 def pad_and_mask(batch):
+    batch, evals, evects = zip(*batch)
+
     sizes = [b.shape[0] for b in batch]
     padding = nearest_power_of_two(sum(sizes)) - sum(sizes)
     sizes = [0] + sizes + [padding]
     sizes = jnp.cumsum(jnp.array(sizes))
 
-    batch += [jnp.zeros((padding,) + batch[0].shape[1:])]
+    batch += (jnp.zeros((padding,) + batch[0].shape[1:]),)
+    evals += (jnp.full_like(evals[0], fill_value=jnp.nan),)
+    evects += (jnp.full((padding, evects[0].shape[1]), fill_value=jnp.nan),)
+    pos_emb = jnp.vstack([make_pos_emb(e, v) for e, v in zip(evals, evects)])
     batch = jnp.vstack(batch)
 
-    attn_mask = jnp.zeros((batch.shape[0], batch.shape[0]))
+    attn_mask = jnp.zeros((1, batch.shape[0], batch.shape[0]))
     for start, end in zip(sizes[:-1], sizes[1:]):
-        attn_mask = attn_mask.at[start:end, start:end].set(1)
+        attn_mask = attn_mask.at[:, start:end, start:end].set(1)
 
-    pad_mask = jnp.ones((1, batch.shape[0]))
-    pad_mask = pad_mask.at[..., -padding:].set(0.)
+    pad_mask = jnp.ones(batch.shape[0])
+    pad_mask = pad_mask.at[-padding:].set(0.)
 
-    return batch[None], attn_mask[None], pad_mask
+    return jax.tree.map(lambda x: x[None], (batch, pos_emb, attn_mask, pad_mask))
 
 
-def load(dataset_path, batch_size, n_timesteps, key, encode_fn):
+def load(dataset_path, batch_size, n_timesteps, eig_k, key, encode_fn):
     dataset = load_dataset(dataset_path)
 
     while True:
@@ -87,7 +100,7 @@ def load(dataset_path, batch_size, n_timesteps, key, encode_fn):
             graph_size = dataset[idx][0].embedding.nodes.shape[0]
 
             if nodes + graph_size < batch_size:
-                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, encode_fn))
+                batch.append(draw_configurations(dataset[idx], n_timesteps, eig_k, conf_key, encode_fn))
                 nodes += graph_size
             else:
                 break
@@ -99,7 +112,8 @@ def load(dataset_path, batch_size, n_timesteps, key, encode_fn):
 def main(cfg):
 
     @jax.jit
-    def loss_fn(params, key, cx, attn_mask, pad_mask, schedule='uniform'):
+    def loss_fn(params, key, batch, schedule='uniform'):
+        cx, pos_emb, attn_mask, pad_mask = batch
         z_key, t_key, model_key = jax.random.split(key, 3)
 
         if schedule == 'log-normal':
@@ -118,21 +132,21 @@ def main(cfg):
         v_t = x - z
         cx = cx.at[..., -1, :].set(x_t)
 
-        v_pred = model.apply(params, cx, t, attn_mask, rngs=model_key)
+        v_pred = model.apply(params, cx, pos_emb, t, attn_mask, rngs=model_key)
         loss = optax.squared_error(v_pred, v_t).mean(axis=-1)
         loss = (pad_mask * loss).sum() / pad_mask.sum()
         return loss
 
     @jax.jit
-    def step_fn(params, opt_state, key, batch, attn_mask, pad_mask):
-        loss, grads = jax.value_and_grad(loss_fn)(params, key, batch, attn_mask, pad_mask)
+    def step_fn(params, opt_state, key, batch):
+        loss, grads = jax.value_and_grad(loss_fn)(params, key, batch)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
     @jax.jit
-    def generate_fn(params, key, batch, mask):
-        return model.apply(params, batch, mask, rngs=key, method='gen')
+    def generate_fn(params, key, batch):
+        return model.apply(params, *batch, rngs=key, method='gen')
 
     with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
         gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
@@ -144,10 +158,10 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
 
-    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key, encode_fn)
-    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, encode_fn))
+    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, cfg.train.eig_k, data_key, encode_fn)
+    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, cfg.train.eig_k, val_data_key, encode_fn))
     sample = next(iter(data))
-    sample = (sample[0], jnp.zeros((1, sample[0].shape[1])), sample[1])
+    sample = (sample[0], sample[1], jnp.zeros((1, sample[0].shape[1])), sample[2])
 
     model = FlowMatching(**cfg.model)
     params = model.init({'params': init_key}, *sample)
@@ -167,11 +181,11 @@ def main(cfg):
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
 
-    for step, (batch, attn_mask, pad_mask) in zip(range(cfg.train.n_steps), data):
+    for step, batch in zip(range(cfg.train.n_steps), data):
         log_dict = {}
 
         train_key, subkey = jax.random.split(train_key)
-        params, opt_state, loss = step_fn(params, opt_state, subkey, batch, attn_mask, pad_mask)
+        params, opt_state, loss = step_fn(params, opt_state, subkey, batch)
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
@@ -181,8 +195,8 @@ def main(cfg):
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
-                val_batch, val_attn_mask, val_pad_mask = next(val_data)
-                loss = loss_fn(params, subkey, val_batch, val_attn_mask, val_pad_mask)
+                val_batch = next(val_data)
+                loss = loss_fn(params, subkey, val_batch)
                 val_loss += loss.item()
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps

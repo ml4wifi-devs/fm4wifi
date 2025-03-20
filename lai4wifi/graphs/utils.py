@@ -70,3 +70,28 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
         return Graph(graph, None, pos, walls, aps, stas, idx_to_edge, idx_to_ap, idx_to_sta, selected_idx)
 
     return graph
+
+
+def eig_laplacian(senders, receivers, n_nodes, k):
+    adj = jnp.zeros((n_nodes, n_nodes), dtype=jnp.float32)
+    adj = adj.at[(senders, receivers)].set(1)
+    D = jnp.diag(adj.sum(axis=1))
+    L = D - adj
+
+    evals, evects = jnp.linalg.eigh(L)
+
+    idx = jnp.argsort(evals)[:k]
+    evals, evects = evals[idx].real, evects[:, idx].real
+    evals = evals.clip(min=0)
+
+    norm = jnp.linalg.norm(evects, axis=0)
+    norm = norm.clip(min=1e-12)
+    evects /= norm
+
+    if (N := len(evals)) < k:
+        pad_width = [(0, 0)] * (evects.ndim - 1) + [(0, k - N)]
+        evects = jnp.pad(evects, pad_width, mode='constant', constant_values=jnp.nan)
+        pad_width = [(0, 0)] * (evals.ndim - 1) + [(0, k - N)]
+        evals = jnp.pad(evals, pad_width, mode='constant', constant_values=jnp.nan)
+
+    return evals, evects

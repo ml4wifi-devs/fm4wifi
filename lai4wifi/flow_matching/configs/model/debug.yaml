@@ -3,4 +3,7 @@ num_heads: 4
 ff_dim: 256
 latent_size: 128
 drop_rate: 0.2
+pe_num_layers: 2
+pe_num_heads: 2
+pe_ff_dim: 64
 dtype: "float32"

@@ -7,7 +7,8 @@ log:
 val:
   n_steps: 2
   freq: 20
-n_steps: 1000
 batch_size: 256
-n_timesteps: 6
+eig_k: 16
+n_steps: 1000
+n_timesteps: 5
 seed: 42

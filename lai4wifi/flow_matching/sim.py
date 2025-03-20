@@ -13,10 +13,11 @@ from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.model import FlowMatching
+from lai4wifi.flow_matching.training import make_pos_emb
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
-from lai4wifi.graphs.utils import nx_to_jraph
+from lai4wifi.graphs.utils import eig_laplacian, nx_to_jraph
 
 
 def associations_to_nx(scenario):
@@ -40,16 +41,16 @@ def associations_to_nx(scenario):
     return G
 
 
-def get_initial_configurations(scenario, aps, stas, context_len, key, encode_fn):
+def get_initial_configurations(scenario, aps, stas, n_timesteps, key, encode_fn):
     G = associations_to_nx(scenario)
     graph = nx_to_jraph(G)
     emb = encode_fn(graph).nodes
 
     n_nodes = graph.nodes.active.shape[0]
     latent_dim = emb.shape[1]
-    context = jnp.zeros((n_nodes, context_len * latent_dim))
+    context = jnp.zeros((n_nodes, n_timesteps * latent_dim))
 
-    for _ in range(context_len):
+    for _ in range(n_timesteps):
         key, ap_key, scenario_key = jax.random.split(key, 3)
         sharing_ap = jax.random.choice(key, aps).item()
         selected_sta = jax.random.choice(key, stas[sharing_ap]).item()
@@ -127,7 +128,7 @@ def get_next_context(G, graph, sharing_ap, selected_sta, context, internals, enc
     return context
 
 
-def run_scenario(scenario, n_reps, n_steps, context_len, seed, gen_fn, encode_fn, decode_fn):
+def run_scenario(scenario, n_reps, n_steps, n_timesteps, eig_k, seed, gen_fn, encode_fn, decode_fn):
     key = jax.random.PRNGKey(seed)
     runs = []
     actions = []
@@ -141,7 +142,9 @@ def run_scenario(scenario, n_reps, n_steps, context_len, seed, gen_fn, encode_fn
         actions.append([])
 
         key, conf_key = jax.random.split(key)
-        context, graph = get_initial_configurations(scenario, aps, stas, context_len, conf_key, encode_fn)
+        context, graph = get_initial_configurations(scenario, aps, stas, n_timesteps, conf_key, encode_fn)
+        evals, evects = eig_laplacian(graph.senders, graph.receivers, graph.n_node[0], eig_k)
+        pos_emb = make_pos_emb(evals, evects)
 
         for _ in range(n_steps):
             key, ap_key, sta_key, target_key, fm_key, scenario_key = jax.random.split(key, 6)
@@ -149,9 +152,9 @@ def run_scenario(scenario, n_reps, n_steps, context_len, seed, gen_fn, encode_fn
             sharing_ap = jax.random.choice(ap_key, aps).item()
             selected_sta = jax.random.choice(sta_key, stas[sharing_ap]).item()
             network_desc, G = get_network_desc(scenario, sharing_ap, selected_sta, encode_fn)
-            x = jnp.concatenate([network_desc, context], axis=1)[None]
+            x = jnp.concatenate([network_desc, context], axis=1)
 
-            z = gen_fn(x, rngs=fm_key)
+            z = gen_fn(x[None], pos_emb[None], rngs=fm_key)
             graph = graph._replace(nodes=z)
             connections = decode_fn(graph).nodes
             graph = graph._replace(nodes=connections)
@@ -181,8 +184,8 @@ if __name__ == '__main__':
     fm = FlowMatching(**fm_cfg.model)
     gen_fn = jax.jit(partial(fm.apply, fm_params, method='gen'))
 
-    gnn_cfg = OmegaConf.load(os.path.join(fm_cfg.train.gnn_path, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(fm_cfg.train.gnn_path), item_names=['params']) as ckpt_manager:
+    gnn_cfg = OmegaConf.load(os.path.join(fm_cfg.gnn_path, 'config.yaml'))
+    with ocp.CheckpointManager(os.path.abspath(fm_cfg.gnn_path), item_names=['params']) as ckpt_manager:
         gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
 
     gnn = GnnAutoencoder(**gnn_cfg.model)
@@ -192,7 +195,10 @@ if __name__ == '__main__':
     all_results = []
 
     for scenario in tqdm(ALL_SCENARIOS, desc='Scenarios'):
-        runs, actions = run_scenario(scenario, args.n_reps, scenario.n_steps, fm_cfg.train.n_timesteps, args.seed, gen_fn, encode_fn, decode_fn)
+        runs, actions = run_scenario(
+            scenario, args.n_reps, scenario.n_steps, fm_cfg.train.n_timesteps,
+            fm_cfg.train.eig_k, args.seed, gen_fn, encode_fn, decode_fn
+        )
         all_results.append([{
             'runs': runs,
             'actions': actions

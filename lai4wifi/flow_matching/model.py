@@ -53,11 +53,13 @@ class Transformer(nn.Module):
     dtype: jnp.dtype
 
     @nn.compact
-    def __call__(self, x, t, mask=None, training=True):
+    def __call__(self, x, t=None, mask=None, training=True):
         for block in range(self.num_layers):
             x = TransformerBlock(self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, mask, training=training)
-            t = nn.Dense(x.shape[-1], dtype=self.dtype, use_bias=False)(t)
-            x = x + t
+
+            if t is not None:
+                t = nn.Dense(x.shape[-1], dtype=self.dtype, use_bias=False)(t)
+                x = x + t
 
         x = nn.LayerNorm()(x)
         return x
@@ -86,7 +88,7 @@ class TimeEmbedding(nn.Module):
         return FeedForwardBlock(self.ff_dim, drop_rate=0., dtype=self.dtype)(t)
 
 
-class FlowMatching(nn.Module):
+class GraphPositionalEmbedding(nn.Module):
     num_layers: int
     num_heads: int
     ff_dim: int
@@ -95,18 +97,60 @@ class FlowMatching(nn.Module):
     dtype: jnp.dtype
 
     @nn.compact
-    def __call__(self, x, t, mask, training=True):
+    def __call__(self, pos_emb, training=True):
+        if training:
+            sign_flip = jax.random.choice(self.make_rng('lai'), jnp.array([-1., 1.]), shape=(1, 1, pos_emb.shape[-2]))
+            pos_emb = pos_emb.at[..., 0].mul(sign_flip)
+
+        pos_emb = pos_emb.squeeze(axis=0)
+        mask = jnp.isnan(pos_emb)[..., 0]
+        pos_emb = jnp.nan_to_num(pos_emb)
+
+        pos_emb = nn.LayerNorm()(pos_emb)
+        pos_emb = nn.Dense(self.latent_size, dtype=self.dtype, use_bias=False)(pos_emb)
+
+        padding_mask = mask[..., None] & mask[..., None, :]
+        padding_mask = padding_mask[..., None, :, :]
+
+        pos_emb = Transformer(
+            self.num_layers, self.num_heads, self.ff_dim, self.drop_rate, self.dtype
+        )(pos_emb, mask=padding_mask, training=training)
+
+        pos_emb = jnp.where(mask[..., None], jnp.nan, pos_emb)
+        pos_emb = jnp.nansum(pos_emb, axis=-2)
+        pos_emb = pos_emb[None]
+
+        return pos_emb
+
+
+class FlowMatching(nn.Module):
+    num_layers: int
+    num_heads: int
+    ff_dim: int
+    latent_size: int
+    drop_rate: float
+    pe_num_layers: int
+    pe_num_heads: int
+    pe_ff_dim: int
+    dtype: jnp.dtype
+
+    @nn.compact
+    def __call__(self, x, pos_emb, t, mask, training=True):
         x = x.reshape(x.shape[0], x.shape[1], -1)
+        pe = GraphPositionalEmbedding(
+            self.pe_num_layers, self.pe_num_heads, self.pe_ff_dim, self.latent_size, self.drop_rate, self.dtype
+        )(pos_emb, training=training)
+        x = jnp.concatenate([x, pe], axis=-1)
         t = TimeEmbedding(self.ff_dim, x.shape[-1], self.dtype)(t)
         x = Transformer(self.num_layers, self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, t, mask, training=training)
         x = nn.Dense(self.latent_size, dtype=self.dtype)(x)
         return x
 
-    def gen(self, context, mask=None, n_steps=10):
+    def gen(self, context, pos_emb, mask=None, n_steps=10):
         def scan_fn(unet, x, t):
             cx = jnp.concatenate([context, x], axis=2)
             t = jnp.full(x.shape[:2], t)
-            v = unet(cx, t, mask, training=False)
+            v = unet(cx, pos_emb, t, mask, training=False)
             x = x + v / n_steps
             return x, None
 
