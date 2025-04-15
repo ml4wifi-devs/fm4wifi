@@ -10,5 +10,5 @@ val:
 batch_size: 256
 eig_k: 16
 n_steps: 1000
-n_timesteps: 5
+n_timesteps: 6
 seed: 42

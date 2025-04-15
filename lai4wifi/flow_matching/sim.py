@@ -109,7 +109,7 @@ def get_next_context(G, graph, sharing_ap, selected_sta, context, internals, enc
 
         if data['type'] == EdgeType.STA and (connections.selected[i, 1] == 1 or (ap == sharing_ap and sta == selected_sta)):
             rssi = rssi.at[i].set((internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD)
-            success = success.at[i].set(internals.frames_transmitted[ap] / internals.ampdu_size[ap])
+            success = success.at[i].set(internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap]))
 
     connections = Connection(
         active=connections.active,
@@ -155,7 +155,7 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, eig_k, seed, gen_fn, en
             network_desc, G = get_network_desc(scenario, sharing_ap, selected_sta, encode_fn)
             x = jnp.concatenate([network_desc, context], axis=1)
 
-            z = gen_fn(x[None], pos_emb[None], rngs=fm_key)
+            z = gen_fn(x[None], pos_emb[None], rngs=fm_key)[0]
             graph = graph._replace(nodes=z)
             connections = decode_fn(graph).nodes
             graph = graph._replace(nodes=connections)
