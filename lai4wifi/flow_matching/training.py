@@ -15,6 +15,7 @@ from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import load_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.training import load as load_gnn_dataset
 from lai4wifi.graphs.utils import eig_laplacian, nearest_power_of_two
 
 
@@ -148,11 +149,14 @@ def main(cfg):
     def generate_fn(params, key, batch):
         return model.apply(params, *batch, rngs=key, method='gen')
 
-    with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
-        gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
-
     gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
     gnn = GnnAutoencoder(**gnn_cfg.model)
+    gnn_val_data = load_gnn_dataset(os.path.join('../graphs', gnn_cfg.val_dataset), gnn_cfg.train.batch_size, jax.random.PRNGKey(0))
+    gnn_params = gnn.init({'params': jax.random.PRNGKey(0)}, next(iter(gnn_val_data)))
+
+    with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_handlers={'params': ocp.StandardCheckpointHandler()}) as ckpt_manager:
+        gnn_params = ckpt_manager.restore(None, items={'params': gnn_params}).params
+
     encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
 
     key = jax.random.PRNGKey(cfg.train.seed)
