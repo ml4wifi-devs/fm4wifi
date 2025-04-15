@@ -31,10 +31,14 @@ def load(dataset_path, batch_size, key):
 def main(cfg):
     loss_weights = jnp.array(cfg.train.loss_weights)
     loss_weights /= loss_weights.sum()
+    kl_loss_weight = cfg.train.kl_loss_weight
 
     @jax.jit
     def loss_fn(params, key, batch):
-        pred = model.apply(params, batch)
+        pred, z_mean, z_log_var = model.apply(params, batch, rngs={'lai': key})
+
+        def kl_loss(mean, log_var):
+            return -0.5 * (1. + log_var - mean ** 2 - jnp.exp(log_var)).mean(axis=-1)
 
         def mixture_categorical_loss(logits, labels):
             na_logits, na_labels = logits[..., -1], labels[..., -1]
@@ -43,7 +47,7 @@ def main(cfg):
             softmax_loss = optax.softmax_cross_entropy(softmax_logits, softmax_labels)
             return na_loss + (1 - na_labels) * softmax_loss
 
-        def weighted_loss_fn(batch, pred):
+        def weighted_loss_fn(batch, pred, z_mean, z_log_var):
             mask = jraph.get_node_padding_mask(pred)
             active_loss   = mask * mixture_categorical_loss(pred.nodes.active, batch.nodes.active)
             mcs_loss      = mask * mixture_categorical_loss(pred.nodes.mcs, batch.nodes.mcs)
@@ -54,7 +58,9 @@ def main(cfg):
             type_loss     = mask * mixture_categorical_loss(pred.nodes.type, batch.nodes.type)
             losses = jnp.array([active_loss, mcs_loss, rssi_loss, selected_loss, success_loss, tx_power_loss, type_loss]).sum(axis=-1)
             losses /= mask.sum()
-            return losses @ loss_weights, losses
+            kl_reg_loss   = mask * kl_loss(z_mean.nodes, z_log_var.nodes)
+            kl_reg_loss   = kl_reg_loss.sum() / mask.sum()
+            return losses @ loss_weights + kl_loss_weight * kl_reg_loss, kl_reg_loss, losses
 
         def mixture_accuracy(logits, labels):
             na_logits, na_labels = logits[..., -1], labels[..., -1]
@@ -87,9 +93,9 @@ def main(cfg):
             pred_metrics = metrics[:, 1] / pred_mask.sum(axis=-1)
             return na_metrics, pred_metrics
 
-        loss, other_losses = weighted_loss_fn(batch, pred)
+        loss, kl_loss, other_losses = weighted_loss_fn(batch, pred, z_mean, z_log_var)
         na_metrics, pred_metrics = metrics_fn(batch, pred)
-        return loss, (other_losses, na_metrics, pred_metrics)
+        return loss, (kl_loss, other_losses, na_metrics, pred_metrics)
 
 
     @jax.jit
@@ -116,7 +122,7 @@ def main(cfg):
     sample = next(iter(data))
 
     model = GnnAutoencoder(**cfg.model)
-    params = model.init({'params': init_key}, sample)
+    params = model.init({'params': init_key, 'lai': init_key}, sample)
     print(model.tabulate(jax.random.PRNGKey(0), sample))
 
     optimizer = optax.adamw(**cfg.optimizer)
@@ -137,27 +143,31 @@ def main(cfg):
         log_dict = {}
 
         train_key, subkey = jax.random.split(train_key)
-        params, opt_state, loss, (other_losses, na_metrics, pred_metrics) = step_fn(params, opt_state, subkey, batch)
+        params, opt_state, loss, (kl_loss, other_losses, na_metrics, pred_metrics) = step_fn(params, opt_state, subkey, batch)
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
+        log_dict['train/kl_loss'] = kl_loss.item()
         log_vector(log_dict, 'train', 'loss', other_losses)
         log_vector(log_dict, 'train', 'na_acc', na_metrics)
         log_vector(log_dict, 'train', 'pred_acc', pred_metrics)
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
-            val_loss, val_other_losses, val_na_metrics, val_pred_metrics = 0.0, jnp.zeros(7), jnp.zeros(7), jnp.zeros(7)
+            val_loss, val_kl_loss = 0.0, 0.0
+            val_other_losses, val_na_metrics, val_pred_metrics = jnp.zeros(7), jnp.zeros(7), jnp.zeros(7)
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch = next(val_data)
-                loss, (other_losses, na_metrics, pred_metrics) = loss_fn(params, subkey, val_batch)
+                loss, (kl_loss, other_losses, na_metrics, pred_metrics) = loss_fn(params, subkey, val_batch)
                 val_loss += loss.item()
+                val_kl_loss += kl_loss.item()
                 val_other_losses += other_losses
                 val_na_metrics += na_metrics
                 val_pred_metrics += pred_metrics
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
+            log_dict['val/kl_loss'] = val_kl_loss / cfg.train.val.n_steps
             log_vector(log_dict, 'val', 'loss', val_other_losses, cfg.train.val.n_steps)
             log_vector(log_dict, 'val', 'na_acc', val_na_metrics, cfg.train.val.n_steps)
             log_vector(log_dict, 'val', 'pred_acc', val_pred_metrics, cfg.train.val.n_steps)
