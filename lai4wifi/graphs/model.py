@@ -10,15 +10,13 @@ from lai4wifi.graphs.attributes import *
 class MLP(nn.Module):
     features: list
     dtype: jnp.dtype
-    act_fn: Callable = nn.relu
+    act_fn: Callable = nn.gelu
 
     @nn.compact
     def __call__(self, x):
         for i, size in enumerate(self.features):
             x = nn.Dense(size, dtype=self.dtype)(x)
-
-            if i < len(self.features) - 1:
-                x = self.act_fn(x)
+            x = self.act_fn(x)
 
         return x
 
@@ -43,48 +41,44 @@ class Encoder(nn.Module):
     # https://arxiv.org/pdf/2107.09422v1
     # https://github.com/google-deepmind/jraph/blob/master/jraph/ogb_examples/train_flax.py
 
-    features: Sequence[int]
+    embed_features: int
+    mlp_features: Sequence[int]
+    latent_features: int
+    n_layers: int
     dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, graph):
-        embed = jraph.GraphMapFeatures(
-            embed_node_fn=make_embed_fn(self.features[0], self.dtype)
-        )
-        encode = jraph.GraphNetwork(
-            update_edge_fn=make_mlp(self.features[1:-1], self.dtype),
-            update_node_fn=make_mlp(self.features[1:-1], self.dtype),
-            update_global_fn=make_mlp(self.features[1:-1], self.dtype)
-        )
-        mean_map = jraph.GraphMapFeatures(
-            embed_node_fn=make_embed_fn(self.features[-1], self.dtype)
-        )
-        log_var_map = jraph.GraphMapFeatures(
-            embed_node_fn=make_embed_fn(self.features[-1], self.dtype)
-        )
-
-        x = embed(graph)
-        z = encode(x)
-        z_mean = mean_map(z)
-        z_log_var = log_var_map(z)
+        x = jraph.GraphMapFeatures(embed_node_fn=make_embed_fn(self.embed_features, self.dtype))(graph)
+        
+        for _ in range(self.n_layers):
+            x = jraph.GraphNetwork(
+                update_edge_fn=make_mlp(self.mlp_features, self.dtype),
+                update_node_fn=make_mlp(self.mlp_features, self.dtype),
+                update_global_fn=make_mlp(self.mlp_features, self.dtype)
+            )(x)
+            
+        z_mean = jraph.GraphMapFeatures(embed_node_fn=make_embed_fn(self.latent_features, self.dtype))(x)
+        z_log_var = jraph.GraphMapFeatures(embed_node_fn=make_embed_fn(self.latent_features, self.dtype))(x)
 
         return z_mean, z_log_var
 
 
 class Decoder(nn.Module):
-    features: Sequence[int]
+    mlp_features: Sequence[int]
+    n_layers: int
     dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, z):
-        decode = jraph.GraphNetwork(
-            update_edge_fn=make_mlp(self.features, self.dtype),
-            update_node_fn=make_mlp(self.features, self.dtype),
-            update_global_fn=make_mlp(self.features, self.dtype)
-        )
+        for _ in range(self.n_layers):
+            z = jraph.GraphNetwork(
+                update_edge_fn=make_mlp(self.mlp_features, self.dtype),
+                update_node_fn=make_mlp(self.mlp_features, self.dtype),
+                update_global_fn=make_mlp(self.mlp_features, self.dtype)
+            )(z)
 
-        graph = decode(z)
-        x = nn.relu(graph.nodes)
+        x = nn.gelu(z.nodes)
 
         nodes = Connection(
             active=nn.Dense(len(IsActive), dtype=self.dtype)(x),
@@ -96,40 +90,27 @@ class Decoder(nn.Module):
             type=nn.Dense(len(EdgeType), dtype=self.dtype)(x)
         )
 
-        return jraph.GraphsTuple(
-            nodes=nodes,
-            edges=None,
-            receivers=graph.receivers,
-            senders=graph.senders,
-            globals=None,
-            n_node=graph.n_node,
-            n_edge=graph.n_edge
-        )
+        return z._replace(nodes=nodes)
 
 
 class GnnAutoencoder(nn.Module):
+    embed_features: int
     encoder_features: Sequence[int]
     decoder_features: Sequence[int]
+    latent_features: int
+    n_layers: int
     dtype: jnp.dtype
 
     def setup(self):
-        self.encoder = Encoder(self.encoder_features, self.dtype)
-        self.decoder = Decoder(self.decoder_features, self.dtype)
+        self.encoder = Encoder(self.embed_features, self.encoder_features, self.latent_features, self.n_layers, self.dtype)
+        self.decoder = Decoder(self.decoder_features, self.n_layers, self.dtype)
 
     def __call__(self, graph):
         z_mean, z_log_var = self.encoder(graph)
 
         epsilon = jax.random.normal(self.make_rng('lai'), z_mean.nodes.shape, dtype=z_mean.nodes.dtype)
         nodes = z_mean.nodes + jnp.exp(0.5 * z_log_var.nodes) * epsilon
-        z = jraph.GraphsTuple(
-            nodes=nodes,
-            edges=None,
-            receivers=z_mean.receivers,
-            senders=z_mean.senders,
-            globals=None,
-            n_node=z_mean.n_node,
-            n_edge=z_mean.n_edge
-        )
+        z = z_mean._replace(nodes=nodes)
 
         x = self.decoder(z)
         return x, z_mean, z_log_var
