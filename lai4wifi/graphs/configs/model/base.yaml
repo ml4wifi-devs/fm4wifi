@@ -1,4 +1,3 @@
-latent_size: 256
 encoder_features: [256, 256, 128]
 decoder_features: [128, 256, 256]
 dtype: "float32"
