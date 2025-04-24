@@ -37,9 +37,11 @@ if __name__ == '__main__':
     batch = [example_graph] * 16
     batch = make_batch(batch)
 
-    model = GnnAutoencoder(latent_size=32, encoder_features=(), decoder_features=(), dtype=jnp.float32)
+    model = GnnAutoencoder(embed_features=32, encoder_features=(), decoder_features=(), latent_features=32, n_layers=1, dtype=jnp.float32)
     params = model.init(jax.random.key(0), batch)
-    ug = model.apply(params, batch)
+    ug = model.apply(params, batch, rngs={'lai': jax.random.key(42)})
+
+    assert ug[0].edges is not None
 
     print(jax.tree.map(jnp.shape, batch))
     print(jax.tree.map(jnp.shape, params))
