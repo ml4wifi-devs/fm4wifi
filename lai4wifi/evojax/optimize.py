@@ -72,7 +72,7 @@ if __name__ == '__main__':
     init_key, emb_key = jax.random.split(key)
     graph, idx_to_edge, idx_to_ap, selected_idx, n_nodes, n_stas, n_conns, pos, aps = load_example()
 
-    model = GnnAutoencoder(latent_size=32, encoder_features=(), decoder_features=(), dtype=jnp.float32)
+    model = GnnAutoencoder(encoder_features=(32,), decoder_features=(), dtype=jnp.float32)
     params = model.init({'params': init_key}, graph)
 
     noise_std = 0.1

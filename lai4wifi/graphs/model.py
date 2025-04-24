@@ -43,18 +43,18 @@ class Encoder(nn.Module):
     # https://arxiv.org/pdf/2107.09422v1
     # https://github.com/google-deepmind/jraph/blob/master/jraph/ogb_examples/train_flax.py
 
-    latent_size: int
     features: Sequence[int]
     dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, graph):
         embed = jraph.GraphMapFeatures(
-            embed_node_fn=make_embed_fn(self.latent_size, self.dtype)
+            embed_node_fn=make_embed_fn(self.features[0], self.dtype)
         )
         encode = jraph.GraphNetwork(
-            update_edge_fn=None,
-            update_node_fn=make_mlp(self.features[:-1], self.dtype)
+            update_edge_fn=make_mlp(self.features[1:-1], self.dtype),
+            update_node_fn=make_mlp(self.features[1:-1], self.dtype),
+            update_global_fn=make_mlp(self.features[1:-1], self.dtype)
         )
         mean_map = jraph.GraphMapFeatures(
             embed_node_fn=make_embed_fn(self.features[-1], self.dtype)
@@ -78,8 +78,9 @@ class Decoder(nn.Module):
     @nn.compact
     def __call__(self, z):
         decode = jraph.GraphNetwork(
-            update_edge_fn=None,
-            update_node_fn=make_mlp(self.features, self.dtype)
+            update_edge_fn=make_mlp(self.features, self.dtype),
+            update_node_fn=make_mlp(self.features, self.dtype),
+            update_global_fn=make_mlp(self.features, self.dtype)
         )
 
         graph = decode(z)
@@ -107,13 +108,12 @@ class Decoder(nn.Module):
 
 
 class GnnAutoencoder(nn.Module):
-    latent_size: int
     encoder_features: Sequence[int]
     decoder_features: Sequence[int]
     dtype: jnp.dtype
 
     def setup(self):
-        self.encoder = Encoder(self.latent_size, self.encoder_features, self.dtype)
+        self.encoder = Encoder(self.encoder_features, self.dtype)
         self.decoder = Decoder(self.decoder_features, self.dtype)
 
     def __call__(self, graph):
