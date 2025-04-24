@@ -72,7 +72,7 @@ if __name__ == '__main__':
     init_key, emb_key = jax.random.split(key)
     graph, idx_to_edge, idx_to_ap, selected_idx, n_nodes, n_stas, n_conns, pos, aps = load_example()
 
-    model = GnnAutoencoder(encoder_features=(32,), decoder_features=(), dtype=jnp.float32)
+    model = GnnAutoencoder(embed_features=32, encoder_features=(), decoder_features=(), latent_features=32, n_layers=0, dtype=jnp.float32)
     params = model.init({'params': init_key}, graph)
 
     noise_std = 0.1
@@ -106,7 +106,7 @@ if __name__ == '__main__':
             return (tx, mcs, tx_power), None
 
         (tx, mcs, tx_power), _ = jax.lax.scan(scan_fn, (tx, mcs, tx_power), jnp.arange(n_stas))
-        data_rate = network_data_rate(key, tx, pos, mcs, tx_power, sigma=0., walls=walls, return_sample=False)
+        data_rate = network_data_rate(key, tx, pos, mcs, tx_power, sigma=0., walls=walls)
 
         multiple_tx_per_ap = jnp.any(tx[aps].sum(axis=1) > 1)
         designated_sta_not_selected = jnp.argmax(x.nodes.selected[selected_idx]) == IsSelected.FALSE.value

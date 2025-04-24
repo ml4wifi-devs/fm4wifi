@@ -37,7 +37,7 @@ if __name__ == '__main__':
     batch = [example_graph] * 16
     batch = make_batch(batch)
 
-    model = GnnAutoencoder(encoder_features=(32,), decoder_features=(), dtype=jnp.float32)
+    model = GnnAutoencoder(embed_features=32, encoder_features=(), decoder_features=(), latent_features=32, n_layers=0, dtype=jnp.float32)
     params = model.init(jax.random.key(0), batch)
     ug = model.apply(params, batch, rngs={'lai': jax.random.key(42)})
 
