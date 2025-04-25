@@ -55,8 +55,8 @@ class Encoder(nn.Module):
 
     @nn.compact
     def __call__(self, graph):
-        x = jraph.GraphMapFeatures(embed_node_fn=make_embed_fn(self.embed_features, self.dtype))(graph)
-        
+        x = jraph.GraphMapFeatures(embed_edge_fn=make_embed_fn(self.embed_features, self.dtype))(graph)
+
         for _ in range(self.n_layers):
             x = jraph.GraphNetwork(
                 update_edge_fn=make_mlp(self.mlp_features, self.dtype),
@@ -67,8 +67,8 @@ class Encoder(nn.Module):
                 aggregate_edges_for_globals_fn=segment_mean
             )(x)
             
-        z_mean = jraph.GraphMapFeatures(embed_node_fn=make_embed_fn(self.latent_features, self.dtype))(x)
-        z_log_var = jraph.GraphMapFeatures(embed_node_fn=make_embed_fn(self.latent_features, self.dtype))(x)
+        z_mean = jraph.GraphMapFeatures(embed_edge_fn=make_embed_fn(self.latent_features, self.dtype))(x)
+        z_log_var = jraph.GraphMapFeatures(embed_edge_fn=make_embed_fn(self.latent_features, self.dtype))(x)
 
         return z_mean, z_log_var
 
@@ -90,9 +90,9 @@ class Decoder(nn.Module):
                 aggregate_edges_for_globals_fn=segment_mean
             )(z)
 
-        x = nn.gelu(z.nodes)
+        x = nn.gelu(z.edges)
 
-        nodes = Connection(
+        edges = Connection(
             active=nn.Dense(len(IsActive), dtype=self.dtype)(x),
             mcs=nn.Dense(len(McsValue), dtype=self.dtype)(x),
             rssi=nn.Dense(1, dtype=self.dtype)(x),
@@ -102,7 +102,7 @@ class Decoder(nn.Module):
             type=nn.Dense(len(EdgeType), dtype=self.dtype)(x)
         )
 
-        return z._replace(nodes=nodes)
+        return z._replace(edges=edges)
 
 
 class GnnAutoencoder(nn.Module):
@@ -120,9 +120,9 @@ class GnnAutoencoder(nn.Module):
     def __call__(self, graph):
         z_mean, z_log_var = self.encoder(graph)
 
-        epsilon = jax.random.normal(self.make_rng('lai'), z_mean.nodes.shape, dtype=z_mean.nodes.dtype)
-        nodes = z_mean.nodes + jnp.exp(0.5 * z_log_var.nodes) * epsilon
-        z = z_mean._replace(nodes=nodes)
+        epsilon = jax.random.normal(self.make_rng('lai'), z_mean.edges.shape, dtype=z_mean.edges.dtype)
+        edges = z_mean.edges + jnp.exp(0.5 * z_log_var.edges) * epsilon
+        z = z_mean._replace(edges=edges)
 
         x = self.decoder(z)
         return x, z_mean, z_log_var

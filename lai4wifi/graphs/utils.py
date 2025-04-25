@@ -5,9 +5,8 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 import jraph
-import networkx as nx
 
-from lai4wifi.graphs.attributes import Connection, EdgeType, IsSelected
+from lai4wifi.graphs.attributes import Connection, IsSelected
 
 
 @dataclass
@@ -16,11 +15,6 @@ class Graph:
     embedding: Optional[jax.Array]
     pos: jax.Array
     walls: jax.Array
-    aps: jax.Array
-    stas: jax.Array
-    idx_to_edge: jax.Array
-    idx_to_ap: jax.Array
-    idx_to_sta: jax.Array
     selected_idx: int
 
 
@@ -43,31 +37,23 @@ def make_batch(graph_list, pad=True):
 
 
 def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
-    Gl = nx.line_graph(G)
-    nx.set_node_attributes(Gl, dict(map(lambda e: (e[0:2], e[2]), G.edges(data=True))))
-
-    senders, receivers = jnp.where(nx.to_numpy_array(Gl))
-    nodes = [jax.tree.map(jnp.atleast_1d, Connection(**data)) for node, data in Gl.nodes(data=True)]
-    nodes = jax.tree.map(lambda *args: jnp.stack(args), *nodes)
+    edges, senders, receivers = zip(*[[jax.tree.map(jnp.atleast_1d, Connection(**data)), u, v] for u, v, data in G.edges(data=True)])
+    senders, receivers = senders + receivers, receivers + senders
+    edges += edges
 
     graph = jraph.GraphsTuple(
-        nodes=nodes,
-        edges=None,
-        receivers=receivers,
-        senders=senders,
+        nodes=jnp.empty((len(G.nodes), 0), dtype=jnp.float32),
+        edges=jax.tree.map(lambda *args: jnp.stack(args), *edges),
+        receivers=jnp.asarray(receivers),
+        senders=jnp.asarray(senders),
         globals=None,
-        n_node=jnp.asarray([len(Gl.nodes)]),
-        n_edge=jnp.asarray([2 * len(Gl.edges)])
+        n_node=jnp.asarray([len(G.nodes)]),
+        n_edge=jnp.asarray([len(edges)])
     )
 
     if return_misc:
-        idx_to_edge = jnp.array([(u, v) for (u, v), d in Gl.nodes(data=True) if d['type'] == EdgeType.STA])
-        idx_to_ap = jnp.array([u for (u, _), d in Gl.nodes(data=True) if d['type'] == EdgeType.STA])
-        idx_to_sta = jnp.array([v for (_, v), d in Gl.nodes(data=True) if d['type'] == EdgeType.STA])
-        selected_idx = choice([i for i, ((_, _), d) in enumerate(Gl.nodes(data=True)) if d['selected'] == IsSelected.TRUE])
-        aps = jnp.unique(idx_to_ap)
-        stas = jnp.unique(idx_to_sta)
-        return Graph(graph, None, pos, walls, aps, stas, idx_to_edge, idx_to_ap, idx_to_sta, selected_idx)
+        selected_idx = choice([i for i, (_, _, d) in enumerate(G.edges(data=True)) if d['selected'] == IsSelected.TRUE])
+        return Graph(graph, None, pos, walls, selected_idx)
 
     return graph
 

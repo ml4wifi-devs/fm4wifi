@@ -14,7 +14,7 @@ MAX_TX_POWER = 20.0
 CCA_THRESHOLD = -82.0
 RSSI_MEAN = -60.0
 RSSI_STD = 20.0
-RSSI_THR = (MAX_TX_POWER - CCA_THRESHOLD - RSSI_MEAN) / RSSI_STD
+RSSI_THR = (CCA_THRESHOLD - RSSI_MEAN) / RSSI_STD
 
 
 def save_dataset(dataset, path):
@@ -72,5 +72,9 @@ def convert_dataset(dataset_path, save_path):
 
 
 if __name__ == '__main__':
-    convert_dataset('dataset.pkl.lz4', 'datasets/t_optimal_1k_50/train.pkl.lz4')
-    convert_dataset('val_dataset.pkl.lz4', 'datasets/t_optimal_1k_50/val.pkl.lz4')
+    convert_dataset('datasets/f_optimal_50_20/dataset.pkl.lz4', 'datasets/f_optimal_50_20/train.pkl.lz4')
+    convert_dataset('datasets/f_optimal_50_20/val_dataset.pkl.lz4', 'datasets/f_optimal_50_20/val.pkl.lz4')
+    convert_dataset('datasets/t_optimal_100_10/dataset.pkl.lz4', 'datasets/t_optimal_100_10/train.pkl.lz4')
+    convert_dataset('datasets/t_optimal_100_10/val_dataset.pkl.lz4', 'datasets/t_optimal_100_10/val.pkl.lz4')
+    convert_dataset('datasets/t_optimal_1k_50/dataset.pkl.lz4', 'datasets/t_optimal_1k_50/train.pkl.lz4')
+    convert_dataset('datasets/t_optimal_1k_50/val_dataset.pkl.lz4', 'datasets/t_optimal_1k_50/val.pkl.lz4')

@@ -48,17 +48,17 @@ def main(cfg):
             return na_loss + (1 - na_labels) * softmax_loss
 
         def weighted_loss_fn(batch, pred, z_mean, z_log_var):
-            mask = jraph.get_node_padding_mask(pred)
-            active_loss   = mask * mixture_categorical_loss(pred.nodes.active, batch.nodes.active)
-            mcs_loss      = mask * mixture_categorical_loss(pred.nodes.mcs, batch.nodes.mcs)
-            rssi_loss     = mask * optax.squared_error(pred.nodes.rssi, batch.nodes.rssi).mean(axis=-1)
-            selected_loss = mask * mixture_categorical_loss(pred.nodes.selected, batch.nodes.selected)
-            success_loss  = mask * optax.sigmoid_binary_cross_entropy(pred.nodes.success, batch.nodes.success).mean(axis=-1)
-            tx_power_loss = mask * mixture_categorical_loss(pred.nodes.tx_power, batch.nodes.tx_power)
-            type_loss     = mask * mixture_categorical_loss(pred.nodes.type, batch.nodes.type)
+            mask = jraph.get_edge_padding_mask(pred)
+            active_loss   = mask * mixture_categorical_loss(pred.edges.active, batch.edges.active)
+            mcs_loss      = mask * mixture_categorical_loss(pred.edges.mcs, batch.edges.mcs)
+            rssi_loss     = mask * optax.squared_error(pred.edges.rssi, batch.edges.rssi).mean(axis=-1)
+            selected_loss = mask * mixture_categorical_loss(pred.edges.selected, batch.edges.selected)
+            success_loss  = mask * optax.sigmoid_binary_cross_entropy(pred.edges.success, batch.edges.success).mean(axis=-1)
+            tx_power_loss = mask * mixture_categorical_loss(pred.edges.tx_power, batch.edges.tx_power)
+            type_loss     = mask * mixture_categorical_loss(pred.edges.type, batch.edges.type)
             losses = jnp.array([active_loss, mcs_loss, rssi_loss, selected_loss, success_loss, tx_power_loss, type_loss]).sum(axis=-1)
             losses /= mask.sum()
-            kl_reg_loss   = mask * kl_loss(z_mean.nodes, z_log_var.nodes)
+            kl_reg_loss   = mask * kl_loss(z_mean.edges, z_log_var.edges)
             kl_reg_loss   = kl_reg_loss.sum() / mask.sum()
             return losses @ loss_weights + kl_loss_weight * kl_reg_loss, kl_reg_loss, losses
 
@@ -76,14 +76,14 @@ def main(cfg):
             return jnp.asarray([na_acc, pred_acc, na_acc])
 
         def metrics_fn(batch, pred):
-            mask = jraph.get_node_padding_mask(pred)[None]
-            active_acc   = mask * mixture_accuracy(pred.nodes.active, batch.nodes.active)
-            mcs_acc      = mask * mixture_accuracy(pred.nodes.mcs, batch.nodes.mcs)
-            rssi_acc     = mask * isclose_accuracy(pred.nodes.rssi, batch.nodes.rssi)
-            selected_acc = mask * mixture_accuracy(pred.nodes.selected, batch.nodes.selected)
-            success_acc  = mask * isclose_accuracy(jax.nn.sigmoid(pred.nodes.success), batch.nodes.success)
-            tx_power_acc = mask * mixture_accuracy(pred.nodes.tx_power, batch.nodes.tx_power)
-            type_acc     = mask * mixture_accuracy(pred.nodes.type, batch.nodes.type)
+            mask = jraph.get_edge_padding_mask(pred)[None]
+            active_acc   = mask * mixture_accuracy(pred.edges.active, batch.edges.active)
+            mcs_acc      = mask * mixture_accuracy(pred.edges.mcs, batch.edges.mcs)
+            rssi_acc     = mask * isclose_accuracy(pred.edges.rssi, batch.edges.rssi)
+            selected_acc = mask * mixture_accuracy(pred.edges.selected, batch.edges.selected)
+            success_acc  = mask * isclose_accuracy(jax.nn.sigmoid(pred.edges.success), batch.edges.success)
+            tx_power_acc = mask * mixture_accuracy(pred.edges.tx_power, batch.edges.tx_power)
+            type_acc     = mask * mixture_accuracy(pred.edges.type, batch.edges.type)
             metrics = jnp.array([active_acc, mcs_acc, rssi_acc, selected_acc, success_acc, tx_power_acc, type_acc])
 
             metrics, pred_mask = metrics[:, :-1], metrics[:, -1]
