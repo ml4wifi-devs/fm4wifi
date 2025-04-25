@@ -1,8 +1,9 @@
-from typing import Callable, Sequence
+from typing import Sequence
 
 import jax.numpy as jnp
 import jraph
 import flax.linen as nn
+from jraph._src.utils import segment_mean
 
 from lai4wifi.graphs.attributes import *
 
@@ -10,13 +11,18 @@ from lai4wifi.graphs.attributes import *
 class MLP(nn.Module):
     features: list
     dtype: jnp.dtype
-    act_fn: Callable = nn.gelu
 
     @nn.compact
     def __call__(self, x):
+        residual = x
+        x = nn.LayerNorm(dtype=self.dtype)(x)
+
         for i, size in enumerate(self.features):
             x = nn.Dense(size, dtype=self.dtype)(x)
-            x = self.act_fn(x)
+            x = nn.gelu(x)
+
+        r = nn.Dense(self.features[-1], dtype=self.dtype)(residual)
+        x = x + r
 
         return x
 
@@ -55,7 +61,10 @@ class Encoder(nn.Module):
             x = jraph.GraphNetwork(
                 update_edge_fn=make_mlp(self.mlp_features, self.dtype),
                 update_node_fn=make_mlp(self.mlp_features, self.dtype),
-                update_global_fn=make_mlp(self.mlp_features, self.dtype)
+                update_global_fn=make_mlp(self.mlp_features, self.dtype),
+                aggregate_edges_for_nodes_fn=segment_mean,
+                aggregate_nodes_for_globals_fn=segment_mean,
+                aggregate_edges_for_globals_fn=segment_mean
             )(x)
             
         z_mean = jraph.GraphMapFeatures(embed_node_fn=make_embed_fn(self.latent_features, self.dtype))(x)
@@ -75,7 +84,10 @@ class Decoder(nn.Module):
             z = jraph.GraphNetwork(
                 update_edge_fn=make_mlp(self.mlp_features, self.dtype),
                 update_node_fn=make_mlp(self.mlp_features, self.dtype),
-                update_global_fn=make_mlp(self.mlp_features, self.dtype)
+                update_global_fn=make_mlp(self.mlp_features, self.dtype),
+                aggregate_edges_for_nodes_fn=segment_mean,
+                aggregate_nodes_for_globals_fn=segment_mean,
+                aggregate_edges_for_globals_fn=segment_mean
             )(z)
 
         x = nn.gelu(z.nodes)
