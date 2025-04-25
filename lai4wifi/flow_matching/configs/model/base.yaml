@@ -1,9 +1,9 @@
 num_layers: 5
 num_heads: 32
-ff_dim: 2048
-latent_size: 128
+ff_dim: 1024
+latent_size: 64
 drop_rate: 0.2
 pe_num_layers: 2
 pe_num_heads: 4
-pe_ff_dim: 512
+pe_ff_dim: 256
 dtype: "float32"
