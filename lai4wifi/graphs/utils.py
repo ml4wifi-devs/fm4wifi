@@ -5,6 +5,7 @@ from typing import Optional
 import jax
 import jax.numpy as jnp
 import jraph
+import networkx as nx
 
 from lai4wifi.graphs.attributes import Connection, IsSelected
 
@@ -16,6 +17,8 @@ class Graph:
     pos: jax.Array
     walls: jax.Array
     selected_idx: int
+    line_senders: jax.Array
+    line_receivers: jax.Array
 
 
 def nearest_power_of_two(n):
@@ -52,8 +55,10 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
     )
 
     if return_misc:
+        Gl = nx.line_graph(G)
+        line_senders, line_receivers = jnp.where(nx.to_numpy_array(Gl))
         selected_idx = choice([i for i, (_, _, d) in enumerate(G.edges(data=True)) if d['selected'] == IsSelected.TRUE])
-        return Graph(graph, None, pos, walls, selected_idx)
+        return Graph(graph, None, pos, walls, selected_idx, line_senders, line_receivers)
 
     return graph
 

@@ -1,6 +1,5 @@
 import logging
 import os
-from copy import deepcopy
 from functools import partial
 
 import hydra
@@ -20,8 +19,7 @@ from lai4wifi.graphs.utils import eig_laplacian, nearest_power_of_two
 
 
 def get_network_desc(target_conf, encode_fn, eig_k):
-    desc_graph = deepcopy(target_conf.graph)
-    edge_types = jnp.argmax(desc_graph.nodes.type, axis=-1)
+    edge_types = jnp.argmax(target_conf.graph.edges.type, axis=-1)
 
     active = jnp.where((edge_types == EdgeType.STA.value)[:, None], jnp.array(IsActive.TRUE)[None], jnp.array(IsActive.NA)[None])
     mcs = jnp.zeros((edge_types.shape[0], len(McsValue)))
@@ -34,25 +32,25 @@ def get_network_desc(target_conf, encode_fn, eig_k):
     tx_power = jnp.zeros((edge_types.shape[0], len(TxPowerValue)))
     tx_power = tx_power.at[:].set(jnp.array(TxPowerValue.NA))
 
-    desc_graph = desc_graph._replace(nodes=Connection(
+    desc_graph = target_conf.graph._replace(edges=Connection(
         active=active,
         mcs=mcs,
         rssi=rssi,
         selected=selected,
         success=success,
         tx_power=tx_power,
-        type=desc_graph.nodes.type
+        type=target_conf.graph.edges.type
     ))
-    network_desc = encode_fn(desc_graph).nodes
-    evals, evects = eig_laplacian(desc_graph.senders, desc_graph.receivers, desc_graph.n_node[0], eig_k)
+    network_desc = encode_fn(desc_graph).edges
+    evals, evects = eig_laplacian(target_conf.line_senders, target_conf.line_receivers, desc_graph.n_edge[0], eig_k)
 
     return network_desc, evals, evects
 
 
 def draw_configurations(scenario, n_timesteps, eig_k, key, encode_fn):
     *context_idxs, target_idx = jax.random.choice(key, len(scenario), (n_timesteps + 1,))
-    context = [scenario[i].embedding.nodes for i in context_idxs]
-    target_conf = scenario[target_idx].embedding.nodes
+    context = [scenario[i].embedding.edges for i in context_idxs]
+    target_conf = scenario[target_idx].embedding.edges
     network_desc, evals, evects = get_network_desc(scenario[target_idx], encode_fn, eig_k)
     return jnp.stack([network_desc, *context, target_conf], axis=1), evals, evects
 
@@ -92,17 +90,17 @@ def load(dataset_path, batch_size, n_timesteps, eig_k, key, encode_fn):
     dataset = load_dataset(dataset_path)
 
     while True:
-        nodes = 0
+        edges = 0
         batch = []
 
         while True:
             key, idx_key, conf_key = jax.random.split(key, 3)
             idx = jax.random.choice(idx_key, len(dataset))
-            graph_size = dataset[idx][0].embedding.nodes.shape[0]
+            graph_size = dataset[idx][0].embedding.edges.shape[0]
 
-            if nodes + graph_size < batch_size:
+            if edges + graph_size < batch_size:
                 batch.append(draw_configurations(dataset[idx], n_timesteps, eig_k, conf_key, encode_fn))
-                nodes += graph_size
+                edges += graph_size
             else:
                 break
 
