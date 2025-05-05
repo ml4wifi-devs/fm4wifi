@@ -45,11 +45,11 @@ def associations_to_nx(scenario):
 def get_initial_configurations(scenario, aps, stas, n_timesteps, key, encode_fn):
     G = associations_to_nx(scenario)
     graph = nx_to_jraph(G)
-    emb = encode_fn(graph).nodes
+    emb = encode_fn(graph).edges
 
-    n_nodes = graph.nodes.active.shape[0]
+    n_edges = graph.edges.active.shape[0]
     latent_dim = emb.shape[1]
-    context = jnp.zeros((n_nodes, n_timesteps * latent_dim))
+    context = jnp.zeros((n_edges, n_timesteps * latent_dim))
 
     for _ in range(n_timesteps):
         key, ap_key, scenario_key = jax.random.split(key, 3)
@@ -67,47 +67,43 @@ def get_initial_configurations(scenario, aps, stas, n_timesteps, key, encode_fn)
 
         context = get_next_context(G, graph, sharing_ap, selected_sta, context, internals, encode_fn)
 
-    return context, graph
+    return G, context, graph
 
 
 def get_network_desc(scenario, sharing_ap, selected_sta, encode_fn):
     G = associations_to_nx(scenario)
     G.edges[sharing_ap, selected_sta]['selected'] = IsSelected.TRUE
-    network_desc = encode_fn(nx_to_jraph(G)).nodes
+    network_desc = encode_fn(nx_to_jraph(G)).edges
     return network_desc, G
 
 
 def connections_to_tx(G, graph, sharing_ap, selected_sta):
-    Gl = nx.line_graph(G)
-    nx.set_node_attributes(Gl, dict(map(lambda e: (e[0:2], e[2]), G.edges(data=True))))
-
     tx_matrix = jnp.zeros((len(G), len(G)), dtype=jnp.int32)
     tx_power = jnp.zeros(len(G), dtype=jnp.int32)
     mcs = jnp.zeros(len(G), dtype=jnp.int32)
+    selected = set()
 
-    for i, ((ap, sta), data) in enumerate(Gl.nodes(data=True)):
-        if data['type'] == EdgeType.STA and (graph.nodes.selected[i, 1] == 1 or (ap == sharing_ap and sta == selected_sta)):
+    for i, (ap, sta, data) in enumerate(G.edges(data=True)):
+        if data['type'] == EdgeType.STA and (jnp.argmax(graph.edges.selected[i]) == 1 or (ap == sharing_ap and sta == selected_sta)) and ap not in selected:
+            selected.add(ap)
             tx_matrix = tx_matrix.at[ap, sta].set(1)
-            tx_power = tx_power.at[i].set(jnp.argmax(graph.nodes.tx_power[i]))
-            mcs = mcs.at[i].set(jnp.argmax(graph.nodes.mcs[i]))
+            tx_power = tx_power.at[i].set(jnp.argmax(graph.edges.tx_power[i]))
+            mcs = mcs.at[i].set(jnp.argmax(graph.edges.mcs[i]))
 
     return tx_matrix, tx_power, mcs
 
 
 def get_next_context(G, graph, sharing_ap, selected_sta, context, internals, encode_fn):
-    Gl = nx.line_graph(G)
-    nx.set_node_attributes(Gl, dict(map(lambda e: (e[0:2], e[2]), G.edges(data=True))))
-    connections = graph.nodes
-
     selected_idx = 0
+    connections = graph.edges
     rssi = jnp.zeros_like(connections.rssi)
     success = jnp.zeros_like(connections.success)
 
-    for i, ((ap, sta), data) in enumerate(Gl.nodes(data=True)):
+    for i, (ap, sta, data) in enumerate(G.edges(data=True)):
         if ap == sharing_ap and sta == selected_sta:
             selected_idx = i
 
-        if data['type'] == EdgeType.STA and (connections.selected[i, 1] == 1 or (ap == sharing_ap and sta == selected_sta)):
+        if data['type'] == EdgeType.STA and (jnp.argmax(connections.selected[i]) == 1 or (ap == sharing_ap and sta == selected_sta)):
             rssi = rssi.at[i].set((internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD)
             success = success.at[i].set(internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap]))
 
@@ -120,8 +116,8 @@ def get_next_context(G, graph, sharing_ap, selected_sta, context, internals, enc
         tx_power=connections.tx_power,
         type=connections.type
     )
-    graph = graph._replace(nodes=connections)
-    next_conf = encode_fn(graph).nodes
+    graph = graph._replace(edges=connections)
+    next_conf = encode_fn(graph).edges
 
     context = jnp.roll(context, -next_conf.shape[1], axis=1)
     context = context.at[:, -next_conf.shape[1]:].set(next_conf)
@@ -143,8 +139,11 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, eig_k, seed, gen_fn, en
         actions.append([])
 
         key, conf_key = jax.random.split(key)
-        context, graph = get_initial_configurations(scenario, aps, stas, n_timesteps, conf_key, encode_fn)
-        evals, evects = eig_laplacian(graph.senders, graph.receivers, graph.n_node[0], eig_k)
+        G, context, graph = get_initial_configurations(scenario, aps, stas, n_timesteps, conf_key, encode_fn)
+
+        Gl = nx.line_graph(G)
+        line_senders, line_receivers = jnp.where(nx.to_numpy_array(Gl))
+        evals, evects = eig_laplacian(line_senders, line_receivers, graph.n_edge[0], eig_k)
         pos_emb = make_pos_emb(evals, evects)
 
         for _ in range(n_steps):
@@ -156,9 +155,9 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, eig_k, seed, gen_fn, en
             x = jnp.concatenate([network_desc, context], axis=1)
 
             z = gen_fn(x[None], pos_emb[None], rngs=fm_key)[0]
-            graph = graph._replace(nodes=z)
-            connections = decode_fn(graph).nodes
-            graph = graph._replace(nodes=connections)
+            graph = graph._replace(edges=z)
+            connections = decode_fn(graph).edges
+            graph = graph._replace(edges=connections)
             tx = connections_to_tx(G, graph, sharing_ap, selected_sta)
 
             data_rate, _, internals = scenario(scenario_key, *tx, return_internals=True)
