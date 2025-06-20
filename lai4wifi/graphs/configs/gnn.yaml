@@ -4,8 +4,6 @@ defaults:
   - optimizer: base
   - train: base
 name: gnn_ae_base
-dataset: 'datasets/t_optimal_1k_50/train.pkl.lz4'
-val_dataset: 'datasets/t_optimal_1k_50/val.pkl.lz4'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

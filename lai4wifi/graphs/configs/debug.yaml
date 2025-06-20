@@ -4,8 +4,6 @@ defaults:
   - optimizer: debug
   - train: debug
 name: gnn_ae_debug
-dataset: 'datasets/t_optimal_100_10/train.pkl.lz4'
-val_dataset: 'datasets/t_optimal_100_10/val.pkl.lz4'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
