@@ -17,7 +17,7 @@ class MLP(nn.Module):
         residual = x
         x = nn.LayerNorm(dtype=self.dtype)(x)
 
-        for i, size in enumerate(self.features[:-1]):
+        for i, size in enumerate(self.features):
             x = nn.Dense(size, dtype=self.dtype)(x)
             x = nn.gelu(x)
 
