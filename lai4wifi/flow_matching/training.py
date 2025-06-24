@@ -11,11 +11,11 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.graphs.attributes import *
-from lai4wifi.graphs.dataset import load_dataset
-from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.training import load as load_gnn_dataset
-from lai4wifi.graphs.utils import eig_laplacian, nearest_power_of_two
+from lai4wifi.autoencoder.attributes import *
+from lai4wifi.autoencoder.dataset import load_dataset
+from lai4wifi.autoencoder.model import GnnAutoencoder
+from lai4wifi.autoencoder.training import load as load_gnn_dataset
+from lai4wifi.autoencoder.utils import eig_laplacian, nearest_power_of_two
 
 
 def get_network_desc(target_conf, encode_fn, eig_k):

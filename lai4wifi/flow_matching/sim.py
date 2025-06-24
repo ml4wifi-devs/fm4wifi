@@ -14,11 +14,11 @@ from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import make_pos_emb
-from lai4wifi.graphs.attributes import *
-from lai4wifi.graphs.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
-from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.training import load as load_gnn_dataset
-from lai4wifi.graphs.utils import eig_laplacian, nx_to_jraph
+from lai4wifi.autoencoder.attributes import *
+from lai4wifi.autoencoder.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
+from lai4wifi.autoencoder.model import GnnAutoencoder
+from lai4wifi.autoencoder.training import load as load_gnn_dataset
+from lai4wifi.autoencoder.utils import eig_laplacian, nx_to_jraph
 
 
 def associations_to_nx(scenario):

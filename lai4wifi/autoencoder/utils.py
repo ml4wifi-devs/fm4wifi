@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import jraph
 import networkx as nx
 
-from lai4wifi.graphs.attributes import Connection, IsSelected
+from lai4wifi.autoencoder.attributes import Connection, IsSelected
 
 
 @dataclass
