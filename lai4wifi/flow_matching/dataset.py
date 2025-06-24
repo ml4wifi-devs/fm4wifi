@@ -37,16 +37,19 @@ def load_model(ckpt_path):
     cfg = OmegaConf.load(os.path.join(ckpt_path, 'config.yaml'))
     model = GnnAutoencoder(**cfg.model)
 
-    with ocp.CheckpointManager(ckpt_path, item_handlers={'params': ocp.StandardCheckpointHandler()}) as ckpt_manager:
-        sample = next(iter(load(os.path.join('../graphs', cfg.dataset), cfg.train.batch_size, jax.random.key(0))))
-        params = ckpt_manager.restore(None, items={'params': model.init({'params': jax.random.key(0)}, sample)}).params
+    with ocp.CheckpointManager(ckpt_path, item_names=['params']) as ckpt_manager:
+        params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
 
     return model, params
 
 
 if __name__ == '__main__':
-    model, params = load_model('../graphs/runs/gnn_ae_base')
-    convert_dataset('../graphs/datasets/t_optimal_1k_50/train.pkl.lz4', 'datasets/t_optimal_1k_50/train.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/t_optimal_100_10/train.pkl.lz4', 'datasets/t_optimal_100_10/train.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/t_optimal_1k_50/val.pkl.lz4', 'datasets/t_optimal_1k_50/val.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/t_optimal_100_10/val.pkl.lz4', 'datasets/t_optimal_100_10/val.pkl.lz4', model, params)
+    model, params = load_model('../autoencoder/runs/gnn_ae_base')
+    convert_dataset('../autoencoder/datasets/f_opt_dataset_graph.pkl.lz4', 'datasets/f_opt_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../autoencoder/datasets/f_opt_val_dataset_graph.pkl.lz4', 'datasets/f_opt_val_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../autoencoder/datasets/t_opt_dataset_graph.pkl.lz4', 'datasets/t_opt_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../autoencoder/datasets/t_opt_val_dataset_graph.pkl.lz4', 'datasets/t_opt_val_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../autoencoder/datasets/h_mab_dataset_graph.pkl.lz4', 'datasets/h_mab_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../autoencoder/datasets/h_mab_val_dataset_graph.pkl.lz4', 'datasets/h_mab_val_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../autoencoder/datasets/random_dataset_graph.pkl.lz4', 'datasets/random_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../autoencoder/datasets/random_val_dataset_graph.pkl.lz4', 'datasets/random_val_dataset_graph.pkl.lz4', model, params)
