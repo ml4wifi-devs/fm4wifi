@@ -15,6 +15,9 @@ from lai4wifi.autoencoder.utils import make_batch
 
 def graph_to_embeddings_dataset(dataset, model, params):
     for configurations in tqdm(dataset):
+        if len(configurations) == 0:
+            continue
+
         batch = make_batch(list(map(lambda c: c.graph, configurations)))
         batch = jax.jit(model.apply, static_argnames='method')(params, batch, method='encode')
         batch = jraph.unpad_with_graphs(batch)

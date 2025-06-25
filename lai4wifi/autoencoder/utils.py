@@ -63,6 +63,10 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
     return graph
 
 
+def clear_graph(x):
+    return x._replace(nodes=jnp.empty((y.nodes.shape[0], 0), dtype=x.nodes.dtype), globals=None)
+
+
 def eig_laplacian(senders, receivers, n_nodes, k):
     adj = jnp.zeros((n_nodes, n_nodes), dtype=jnp.float32)
     adj = adj.at[(senders, receivers)].set(1)

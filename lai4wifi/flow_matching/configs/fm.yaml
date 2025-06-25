@@ -4,9 +4,9 @@ defaults:
   - optimizer: base
   - train: base
 name: flow_matching_base
-dataset: 'datasets/t_optimal_1k_50/train.pkl.lz4'
-val_dataset: 'datasets/t_optimal_1k_50/val.pkl.lz4'
-gnn_path: '../graphs/runs/gnn_ae_base'
+dataset: 'datasets/f_opt_dataset_graph.pkl.lz4'
+val_dataset: 'datasets/f_opt_val_dataset_graph.pkl.lz4'
+gnn_path: '../autoencoder/runs/gnn_ae_base'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

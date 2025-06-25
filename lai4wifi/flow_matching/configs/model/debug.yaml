@@ -1,9 +1,4 @@
-num_layers: 2
-num_heads: 4
-ff_dim: 128
-latent_size: 16
-drop_rate: 0.2
-pe_num_layers: 2
-pe_num_heads: 2
-pe_ff_dim: 64
+mlp_features: [16, 8]
+embed_features: 64
+n_layers: 3
 dtype: "float32"

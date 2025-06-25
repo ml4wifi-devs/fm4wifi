@@ -1,6 +1,13 @@
+from typing import Sequence
+
 import jax
 import jax.numpy as jnp
-from flax import linen as nn
+import jraph
+import flax.linen as nn
+from jraph._src.utils import segment_mean
+
+from lai4wifi.autoencoder.model import make_mlp, make_embed_fn
+from lai4wifi.autoencoder.utils import clear_graph
 
 
 class FeedForwardBlock(nn.Module):
@@ -43,33 +50,45 @@ class TimeEmbedding(nn.Module):
 
 
 class FlowMatching(nn.Module):
-    num_layers: int
-    num_heads: int
-    ff_dim: int
-    latent_size: int
-    drop_rate: float
-    pe_num_layers: int
-    pe_num_heads: int
-    pe_ff_dim: int
+    mlp_features: Sequence[int]
+    embed_features: int
+    n_layers: int
     dtype: jnp.dtype
 
     @nn.compact
-    def __call__(self, x, pos_emb, t, mask, training=True):
-        x = x.reshape(x.shape[0], x.shape[1], -1)
-        t = TimeEmbedding(self.ff_dim, x.shape[-1], self.dtype)(t)
-        x = Transformer(self.num_layers, self.num_heads, self.ff_dim, self.drop_rate, self.dtype)(x, t, mask, training=training)
-        x = nn.Dense(self.latent_size, dtype=self.dtype)(x)
+    def __call__(self, x, t, training=True):
+        x = x._replace(
+            edges=x.edges.reshape(x.edges.shape[0], -1),
+            nodes=x.nodes.reshape(x.nodes.shape[0], -1),
+            globals=x.globals.reshape(x.globals.shape[0], -1)
+        )
+        t = TimeEmbedding(4 * x.edges.shape[-1], x.edges.shape[-1], self.dtype)(t)
+        x = x._replace(edges=x.edges + t)
+
+        for _ in range(self.n_layers):
+            x = jraph.GraphNetwork(
+                update_edge_fn=make_mlp(self.mlp_features, self.dtype),
+                update_node_fn=make_mlp(self.mlp_features, self.dtype),
+                update_global_fn=make_mlp(self.mlp_features, self.dtype),
+                aggregate_edges_for_nodes_fn=segment_mean,
+                aggregate_nodes_for_globals_fn=segment_mean,
+                aggregate_edges_for_globals_fn=segment_mean
+            )(x)
+
+        x = jraph.GraphMapFeatures(embed_edge_fn=make_embed_fn(self.embed_features, self.dtype))(x)
         return x
 
-    def gen(self, context, pos_emb, mask=None, n_steps=10):
+    def gen(self, context, n_steps=10):
         def scan_fn(unet, x, t):
-            cx = jnp.concatenate([context, x], axis=2)
+            cx = context._replace(edges=jnp.stack([context.edges, x.edges], axis=1))
             t = jnp.full(x.shape[:2], t)
-            v = unet(cx, pos_emb, t, mask, training=False)
-            x = x + v / n_steps
+            v = unet(cx, t, training=False)
+            x = x._replace(edges=x.edges + v.edges / n_steps)
             return x, None
 
-        z = jax.random.normal(self.make_rng('lai'), context.shape[:2] + (self.latent_size,), dtype=jnp.float32)
+        z = jax.random.normal(self.make_rng('lai'), (context.nodes.shape[0], 1, context.edges.shape[-1]), dtype=self.dtype)
+        z = context._replace(edges=z)
         scan = nn.scan(scan_fn, variable_broadcast='params')
         x, _ = scan(self, z, jnp.linspace(0.0, 1.0, n_steps, endpoint=False))
-        return x
+
+        return clear_graph(x)

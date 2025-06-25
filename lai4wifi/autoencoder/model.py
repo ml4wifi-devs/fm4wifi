@@ -6,6 +6,7 @@ import flax.linen as nn
 from jraph._src.utils import segment_mean
 
 from lai4wifi.autoencoder.attributes import *
+from lai4wifi.autoencoder.utils import clear_graph
 
 
 class MLP(nn.Module):
@@ -122,11 +123,7 @@ class GnnAutoencoder(nn.Module):
 
         epsilon = jax.random.normal(self.make_rng('lai'), z_mean.edges.shape, dtype=z_mean.edges.dtype)
         edges = z_mean.edges + jnp.exp(0.5 * z_log_var.edges) * epsilon
-        z = z_mean._replace(
-            nodes=jnp.empty((graph.nodes.shape[0], 0), dtype=graph.nodes.dtype),
-            edges=edges,
-            globals=None,
-        )
+        z = clear_graph(z_mean._replace(edges=edges))
 
         x = self.decoder(z)
         return x, z_mean, z_log_var
