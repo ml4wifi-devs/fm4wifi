@@ -96,13 +96,20 @@ def main(cfg):
         else:
             raise ValueError(f'Invalid schedule: {schedule}')
 
-        z = jax.random.normal(z_key, (batch.edges.shape[0], batch.edges.shape[-1]))
-        t_b = jnp.full(batch.edges.shape[0], t)
+        def noisy_example(batch, t, z_key):
+            z = jax.random.normal(z_key, (batch.shape[0], batch.shape[-1]))
+            x = batch[:, -1]
+            x_t = (1 - t) * z + t * x
+            v_t = x - z
+            return batch.at[:, -1].set(x_t), v_t
 
-        x = batch.edges[:, -1]
-        x_t = (1 - t_b[:, None]) * z + t_b[:, None] * x
-        v_t = x - z
-        cx = batch._replace(edges=batch.edges.at[:, -1].set(x_t))
+        edges_key, nodes_key, globals_key = jax.random.split(z_key, 3)
+        noisy_edges, v_t = noisy_example(batch.edges, t, edges_key)
+        cx = batch._replace(
+            edges=noisy_edges,
+            nodes=noisy_example(batch.nodes, t, nodes_key)[0],
+            globals=noisy_example(batch.globals, t, globals_key)[0]
+        )
 
         v_pred = model.apply(params, cx, t, rngs=model_key)
         mask = jraph.get_edge_padding_mask(v_pred)

@@ -1,4 +1,4 @@
-mlp_features: [128, 32]
+mlp_features: [128, 256, 128]
 embed_features: 64
 n_layers: 3
 dtype: "float32"

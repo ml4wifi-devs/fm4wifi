@@ -26,6 +26,32 @@ class FeedForwardBlock(nn.Module):
         return x
 
 
+class TransformerBlock(nn.Module):
+    num_heads: int
+    ff_dim: int
+    drop_rate: float
+    dtype: jnp.dtype
+
+    @nn.compact
+    def __call__(self, x, mask, training=True):
+        residual = x
+        x = nn.LayerNorm()(x)
+        x = nn.MultiHeadDotProductAttention(
+            num_heads=self.num_heads,
+            qkv_features=x.shape[-1],
+            dtype=self.dtype,
+            use_bias=False
+        )(x, mask=mask)
+        x = x + residual
+
+        residual = x
+        x = nn.LayerNorm()(x)
+        x = FeedForwardBlock(self.ff_dim, self.drop_rate, self.dtype)(x, training=training)
+        x = x + residual
+
+        return x
+
+
 class TimeEmbedding(nn.Module):
     # https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/embeddings_flax.py
 
@@ -80,14 +106,23 @@ class FlowMatching(nn.Module):
 
     def gen(self, context, n_steps=10):
         def scan_fn(unet, x, t):
-            cx = context._replace(edges=jnp.stack([context.edges, x.edges], axis=1))
-            t = jnp.full(x.shape[:2], t)
+            cx = context._replace(
+                edges=jnp.concatenate([context.edges, x.edges[:, None]], axis=1),
+                nodes=jnp.concatenate([context.nodes, x.nodes[:, None]], axis=1),
+                globals=jnp.concatenate([context.globals, x.globals[:, None]], axis=1)
+            )
             v = unet(cx, t, training=False)
             x = x._replace(edges=x.edges + v.edges / n_steps)
             return x, None
 
-        z = jax.random.normal(self.make_rng('lai'), (context.nodes.shape[0], 1, context.edges.shape[-1]), dtype=self.dtype)
-        z = context._replace(edges=z)
+        key = self.make_rng('lai')
+        edges_key, nodes_key, globals_key = jax.random.split(key, 3)
+
+        z_edges = jax.random.normal(edges_key, (context.edges.shape[0::2]), dtype=self.dtype)
+        z_nodes = jax.random.normal(nodes_key, (context.nodes.shape[0::2]), dtype=self.dtype)
+        z_globals = jax.random.normal(globals_key, (context.globals.shape[0::2]), dtype=self.dtype)
+        z = context._replace(edges=z_edges, nodes=z_nodes, globals=z_globals)
+
         scan = nn.scan(scan_fn, variable_broadcast='params')
         x, _ = scan(self, z, jnp.linspace(0.0, 1.0, n_steps, endpoint=False))
 

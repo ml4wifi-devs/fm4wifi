@@ -64,7 +64,7 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
 
 
 def clear_graph(x):
-    return x._replace(nodes=jnp.empty((y.nodes.shape[0], 0), dtype=x.nodes.dtype), globals=None)
+    return x._replace(nodes=jnp.empty((x.nodes.shape[0], 0), dtype=x.nodes.dtype), globals=None)
 
 
 def eig_laplacian(senders, receivers, n_nodes, k):
