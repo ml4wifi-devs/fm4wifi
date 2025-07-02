@@ -27,7 +27,7 @@ class FeedForwardBlock(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    num_heads: int
+    n_heads: int
     ff_dim: int
     drop_rate: float
     dtype: jnp.dtype
@@ -37,7 +37,7 @@ class TransformerBlock(nn.Module):
         residual = x
         x = nn.LayerNorm()(x)
         x = nn.MultiHeadDotProductAttention(
-            num_heads=self.num_heads,
+            num_heads=self.n_heads,
             qkv_features=x.shape[-1],
             dtype=self.dtype,
             use_bias=False
@@ -50,6 +50,33 @@ class TransformerBlock(nn.Module):
         x = x + residual
 
         return x
+
+
+class Transformer(nn.Module):
+    dim: int
+    ff_dim: int
+    n_layers: int
+    n_heads: int
+    drop_rate: float
+    dtype: jnp.dtype
+
+    @nn.compact
+    def __call__(self, x, training=True):
+        x = nn.Dense(self.dim, dtype=self.dtype, use_bias=False)(x)
+
+        for _ in range(self.n_layers):
+            x = TransformerBlock(self.n_heads, self.ff_dim, self.drop_rate, self.dtype)(x, mask=None, training=training)
+
+        x = nn.LayerNorm(dtype=self.dtype)(x)
+        return x
+
+
+def make_transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype):
+    @jraph.concatenated_args
+    def update_fn(inputs):
+        return Transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype)(inputs, training=True)
+
+    return update_fn
 
 
 class TimeEmbedding(nn.Module):
@@ -76,9 +103,13 @@ class TimeEmbedding(nn.Module):
 
 
 class FlowMatching(nn.Module):
-    mlp_features: Sequence[int]
-    embed_features: int
+    gnn_layers: int
+    dim: int
+    ff_dim: int
     n_layers: int
+    n_heads: int
+    drop_rate: float
+    embed_features: int
     dtype: jnp.dtype
 
     @nn.compact
@@ -91,11 +122,17 @@ class FlowMatching(nn.Module):
         t = TimeEmbedding(4 * x.edges.shape[-1], x.edges.shape[-1], self.dtype)(t)
         x = x._replace(edges=x.edges + t)
 
-        for _ in range(self.n_layers):
+        for _ in range(self.gnn_layers):
             x = jraph.GraphNetwork(
-                update_edge_fn=make_mlp(self.mlp_features, self.dtype),
-                update_node_fn=make_mlp(self.mlp_features, self.dtype),
-                update_global_fn=make_mlp(self.mlp_features, self.dtype),
+                update_edge_fn=make_transformer(
+                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype
+                ),
+                update_node_fn=make_transformer(
+                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype
+                ),
+                update_global_fn=make_transformer(
+                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype
+                ),
                 aggregate_edges_for_nodes_fn=segment_mean,
                 aggregate_nodes_for_globals_fn=segment_mean,
                 aggregate_edges_for_globals_fn=segment_mean

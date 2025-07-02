@@ -1,4 +1,8 @@
-mlp_features: [16, 8]
+gnn_layers: 3
+dim: 64
+ff_dim: 256
+n_layers: 2
+n_heads: 4
+drop_rate: 0.2
 embed_features: 64
-n_layers: 3
-dtype: "float32"
+dtype: "bfloat16"

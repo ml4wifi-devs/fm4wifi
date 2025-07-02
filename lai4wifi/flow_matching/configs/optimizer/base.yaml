@@ -1,2 +1,2 @@
-learning_rate: 0.000005
+learning_rate: 0.000002
 weight_decay: 0.01
