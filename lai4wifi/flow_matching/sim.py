@@ -13,11 +13,12 @@ from mapc_research.envs.test_scenarios import EXEMPLARY_SCENARIOS as ALL_SCENARI
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
-from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.autoencoder.attributes import *
 from lai4wifi.autoencoder.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
 from lai4wifi.autoencoder.model import GnnAutoencoder
 from lai4wifi.autoencoder.utils import nx_to_jraph
+from lai4wifi.flow_matching.model import FlowMatching
+from lai4wifi.flow_matching.training import get_network_desc
 
 
 def associations_to_nx(scenario):
@@ -68,14 +69,7 @@ def get_initial_configurations(scenario, aps, stas, n_timesteps, key, encode_fn)
     return G, context, graph
 
 
-def get_network_desc(scenario, sharing_ap, selected_sta, encode_fn):
-    G = associations_to_nx(scenario)
-    G.edges[sharing_ap, selected_sta]['selected'] = IsSelected.TRUE
-    network_desc = encode_fn(nx_to_jraph(G))
-    return network_desc, G
-
-
-def connections_to_tx(associations, n_nodes, key, graph, sharing_ap, selected_sta):
+def connections_to_tx(associations, n_nodes, key, graph):
     selected = defaultdict(list)
 
     for i in range(graph.n_edge[0]):
@@ -102,17 +96,13 @@ def connections_to_tx(associations, n_nodes, key, graph, sharing_ap, selected_st
     return tx_matrix, tx_power, mcs
 
 
-def get_next_context(G, graph, sharing_ap, selected_sta, context, internals, encode_fn):
-    selected_idx = 0
+def get_next_context(G, graph, selected_idx, context, internals, encode_fn):
     connections = graph.edges
     rssi = jnp.zeros_like(connections.rssi)
     success = jnp.zeros_like(connections.success)
 
     for i, (ap, sta, data) in enumerate(G.edges(data=True)):
-        if ap == sharing_ap and sta == selected_sta:
-            selected_idx = i
-
-        if data['type'] == EdgeType.STA and (jnp.argmax(connections.selected[i]) == 1 or (ap == sharing_ap and sta == selected_sta)):
+        if data['type'] == EdgeType.STA and jnp.argmax(connections.selected[i]) == 1:
             rssi = rssi.at[i].set((internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD)
             success = success.at[i].set(internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap]))
 
@@ -148,13 +138,14 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
 
         key, conf_key = jax.random.split(key)
         G, context, graph = get_initial_configurations(scenario, aps, stas, n_timesteps, conf_key, encode_fn)
+        target = jax.tree.map(lambda x: x[:, 0], context)
+        ap_sta_idxs = jnp.where(jnp.argmax(target.edges.type, axis=-1) == EdgeType.STA.value)[0]
 
         for _ in range(n_steps):
-            key, ap_key, sta_key, fm_key, tx_key, scenario_key = jax.random.split(key, 6)
+            key, sel_key, fm_key, tx_key, scenario_key = jax.random.split(key, 5)
 
-            sharing_ap = jax.random.choice(ap_key, aps).item()
-            selected_sta = jax.random.choice(sta_key, stas[sharing_ap]).item()
-            network_desc, G = get_network_desc(scenario, sharing_ap, selected_sta, encode_fn)
+            selected_idx = jax.random.choice(sel_key, ap_sta_idxs).item()
+            network_desc = get_network_desc(target, selected_idx, encode_fn)
             all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context)
             x = network_desc._replace(
                 edges=all.edges,
@@ -165,13 +156,13 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
             z = gen_fn(x, rngs=fm_key)
             connections = decode_fn(z).edges
             graph = graph._replace(edges=connections)
-            tx = connections_to_tx(scenario.associations, n_nodes, key, graph, sharing_ap, selected_sta)
+            tx = connections_to_tx(scenario.associations, n_nodes, key, graph)
 
             data_rate, _, internals = scenario(scenario_key, *tx, return_internals=True)
             runs[-1].append(data_rate.item())
             actions[-1].append(scenario.tx_to_action(*tx))
 
-            context = get_next_context(G, graph, sharing_ap, selected_sta, context, internals, encode_fn)
+            context = get_next_context(G, graph, selected_idx, context, internals, encode_fn)
 
     return runs, actions
 

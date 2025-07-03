@@ -20,8 +20,8 @@ from lai4wifi.autoencoder.model import GnnAutoencoder
 from lai4wifi.autoencoder.utils import make_batch
 
 
-def get_network_desc(target_conf, encode_fn):
-    edge_types = jnp.argmax(target_conf.graph.edges.type, axis=-1)
+def get_network_desc(target_conf, selected_idx, encode_fn):
+    edge_types = jnp.argmax(target_conf.edges.type, axis=-1)
 
     active = jnp.where((edge_types == EdgeType.STA.value)[:, None], jnp.array(IsActive.TRUE)[None], jnp.array(IsActive.NA)[None])
     mcs = jnp.zeros((edge_types.shape[0], len(McsValue)))
@@ -29,19 +29,19 @@ def get_network_desc(target_conf, encode_fn):
     rssi = jnp.zeros((edge_types.shape[0], 1))
     selected = jnp.zeros((edge_types.shape[0], len(IsSelected)))
     selected = selected.at[:].set(jnp.array(IsSelected.NA))
-    selected = selected.at[target_conf.selected_idx].set(jnp.array(IsSelected.TRUE))
+    selected = selected.at[selected_idx].set(jnp.array(IsSelected.TRUE))
     success = jnp.zeros((edge_types.shape[0], 1))
     tx_power = jnp.zeros((edge_types.shape[0], len(TxPowerValue)))
     tx_power = tx_power.at[:].set(jnp.array(TxPowerValue.NA))
 
-    desc_graph = target_conf.graph._replace(edges=Connection(
+    desc_graph = target_conf._replace(edges=Connection(
         active=active,
         mcs=mcs,
         rssi=rssi,
         selected=selected,
         success=success,
         tx_power=tx_power,
-        type=target_conf.graph.edges.type
+        type=target_conf.edges.type
     ))
 
     return encode_fn(desc_graph)
@@ -52,7 +52,7 @@ def draw_configurations(scenario, n_timesteps, key, encode_fn):
 
     context = [scenario[i].embedding for i in context_idxs]
     target_conf = scenario[target_idx].embedding
-    network_desc = get_network_desc(scenario[target_idx], encode_fn)
+    network_desc = get_network_desc(scenario[target_idx].graph, scenario[target_idx].selected_idx, encode_fn)
 
     all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context, target_conf)
     return network_desc._replace(
@@ -149,7 +149,8 @@ def main(cfg):
     params = model.init({'params': init_key}, *sample)
     print(model.tabulate(jax.random.PRNGKey(0), *sample))
 
-    optimizer = optax.adamw(**cfg.optimizer)
+    lr = optax.cosine_onecycle_schedule(cfg.train.n_steps, cfg.optimizer.learning_rate, pct_start=0.1)
+    optimizer = optax.adamw(lr, weight_decay=cfg.optimizer.weight_decay)
     opt_state = optimizer.init(params)
 
     ckpt_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
