@@ -71,10 +71,10 @@ class Transformer(nn.Module):
         return x
 
 
-def make_transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype):
+def make_transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype, training=True):
     @jraph.concatenated_args
     def update_fn(inputs):
-        return Transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype)(inputs, training=True)
+        return Transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype)(inputs, training=training)
 
     return update_fn
 
@@ -84,6 +84,7 @@ class TimeEmbedding(nn.Module):
 
     ff_dim: int
     latent_size: int
+    drop_rate: float
     dtype: jnp.dtype
 
     @staticmethod
@@ -97,9 +98,9 @@ class TimeEmbedding(nn.Module):
         return signal
 
     @nn.compact
-    def __call__(self, t):
+    def __call__(self, t, training=True):
         t = self.get_sinusoidal_embeddings(t, self.latent_size)
-        return FeedForwardBlock(self.ff_dim, drop_rate=0., dtype=self.dtype)(t)
+        return FeedForwardBlock(self.ff_dim, drop_rate=self.drop_rate, dtype=self.dtype)(t, training=training)
 
 
 class FlowMatching(nn.Module):
@@ -119,19 +120,19 @@ class FlowMatching(nn.Module):
             nodes=x.nodes.reshape(x.nodes.shape[0], -1),
             globals=x.globals.reshape(x.globals.shape[0], -1)
         )
-        t = TimeEmbedding(4 * x.edges.shape[-1], x.edges.shape[-1], self.dtype)(t)
+        t = TimeEmbedding(4 * x.edges.shape[-1], x.edges.shape[-1], self.drop_rate, self.dtype)(t, training=training)
         x = x._replace(edges=x.edges + t)
 
         for _ in range(self.gnn_layers):
             x = jraph.GraphNetwork(
                 update_edge_fn=make_transformer(
-                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype
+                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, training=training
                 ),
                 update_node_fn=make_transformer(
-                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype
+                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, training=training
                 ),
                 update_global_fn=make_transformer(
-                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype
+                    self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, training=training
                 ),
                 aggregate_edges_for_nodes_fn=segment_mean,
                 aggregate_nodes_for_globals_fn=segment_mean,

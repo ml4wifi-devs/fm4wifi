@@ -2,6 +2,7 @@ import json
 import os
 from argparse import ArgumentParser
 from collections import defaultdict
+from copy import deepcopy
 from functools import partial
 from itertools import combinations
 
@@ -43,17 +44,20 @@ def associations_to_nx(scenario):
     return G
 
 
-def get_initial_configurations(scenario, aps, stas, n_timesteps, key, encode_fn):
+def get_initial_configurations(scenario, n_timesteps, key, encode_fn):
     G = associations_to_nx(scenario)
     graph = nx_to_jraph(G)
     context = [encode_fn(graph)] * n_timesteps
 
-    n_nodes = len(aps) + sum(len(stas) for stas in scenario.associations.values())
+    ap_sta_idxs = jnp.where(jnp.argmax(graph.edges.type, axis=-1) == EdgeType.STA.value)[0]
+    n_nodes = len(scenario.associations) + sum(len(stas) for stas in scenario.associations.values())
 
     for _ in range(n_timesteps):
-        key, ap_key, sta_key, tx_key, scenario_key = jax.random.split(key, 5)
-        sharing_ap = jax.random.choice(ap_key, aps).item()
-        selected_sta = jax.random.choice(sta_key, stas[sharing_ap]).item()
+        key, sel_key, tx_key, scenario_key = jax.random.split(key, 4)
+
+        selected_idx = jax.random.choice(sel_key, ap_sta_idxs).item()
+        sharing_ap = graph.senders[selected_idx].item()
+        selected_sta = graph.receivers[selected_idx].item()
 
         G = associations_to_nx(scenario)
         G.edges[sharing_ap, selected_sta]['selected'] = IsSelected.TRUE
@@ -61,12 +65,12 @@ def get_initial_configurations(scenario, aps, stas, n_timesteps, key, encode_fn)
         G.edges[sharing_ap, selected_sta]['mcs'] = McsValue.MCS_11
         graph = nx_to_jraph(G)
 
-        tx = connections_to_tx(scenario.associations, n_nodes, tx_key, graph, sharing_ap, selected_sta)
+        tx = connections_to_tx(scenario.associations, n_nodes, tx_key, graph)
         _, _, internals = scenario(scenario_key, *tx, return_internals=True)
 
-        context = get_next_context(G, graph, sharing_ap, selected_sta, context, internals, encode_fn)
+        context = get_next_context(G, graph, selected_idx, context, internals, encode_fn)
 
-    return G, context, graph
+    return G, context, graph, ap_sta_idxs
 
 
 def connections_to_tx(associations, n_nodes, key, graph):
@@ -127,9 +131,7 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
     runs = []
     actions = []
 
-    aps = jnp.asarray(list(scenario.associations.keys()))
-    stas = {ap: jnp.asarray(stas) for ap, stas in scenario.associations.items()}
-    n_nodes = len(aps) + sum(len(stas) for stas in scenario.associations.values())
+    n_nodes = len(scenario.associations) + sum(len(stas) for stas in scenario.associations.values())
 
     for _ in trange(n_reps):
         scenario.reset()
@@ -137,15 +139,14 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
         actions.append([])
 
         key, conf_key = jax.random.split(key)
-        G, context, graph = get_initial_configurations(scenario, aps, stas, n_timesteps, conf_key, encode_fn)
-        target = jax.tree.map(lambda x: x[:, 0], context)
-        ap_sta_idxs = jnp.where(jnp.argmax(target.edges.type, axis=-1) == EdgeType.STA.value)[0]
+        G, context, graph, ap_sta_idxs = get_initial_configurations(scenario, n_timesteps, conf_key, encode_fn)
+        graph_template = deepcopy(graph)
 
         for _ in range(n_steps):
             key, sel_key, fm_key, tx_key, scenario_key = jax.random.split(key, 5)
 
             selected_idx = jax.random.choice(sel_key, ap_sta_idxs).item()
-            network_desc = get_network_desc(target, selected_idx, encode_fn)
+            network_desc = get_network_desc(graph_template, selected_idx, encode_fn)
             all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context)
             x = network_desc._replace(
                 edges=all.edges,
