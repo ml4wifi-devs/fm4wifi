@@ -105,7 +105,7 @@ def get_next_context(graph, context, internals, encode_fn):
     rssi = jnp.zeros_like(connections.rssi)
     success = jnp.zeros_like(connections.success)
 
-    for i in range(graph.senders):
+    for i in range(graph.n_edge.item()):
         ap, sta = graph.senders[i].item(), graph.receivers[i].item()
         is_sta_ap = jnp.argmax(connections.type[i]) == EdgeType.STA.value
         rssi_val = (internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD
