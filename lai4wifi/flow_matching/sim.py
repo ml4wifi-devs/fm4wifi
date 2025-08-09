@@ -68,9 +68,9 @@ def get_initial_configurations(scenario, n_timesteps, key, encode_fn):
         tx = connections_to_tx(scenario.associations, n_nodes, tx_key, graph)
         _, _, internals = scenario(scenario_key, *tx, return_internals=True)
 
-        context = get_next_context(G, graph, selected_idx, context, internals, encode_fn)
+        context = get_next_context(graph, context, internals, encode_fn)
 
-    return G, context, graph, ap_sta_idxs
+    return context, graph, ap_sta_idxs
 
 
 def connections_to_tx(associations, n_nodes, key, graph):
@@ -91,30 +91,36 @@ def connections_to_tx(associations, n_nodes, key, graph):
         selected_sta_idx = jax.random.choice(subkey, len(sta_indices), replace=False).item()
         selected_for_tx.append(sta_indices[selected_sta_idx])
 
-    for i in selected_for_tx:
-        ap, sta = graph.senders[i].item(), graph.receivers[i].item()
+    for idx in selected_for_tx:
+        ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
         tx_matrix = tx_matrix.at[ap, sta].set(1)
-        tx_power = tx_power.at[i].set(jnp.argmax(graph.edges.tx_power[i, :-1]))
-        mcs = mcs.at[i].set(jnp.argmax(graph.edges.mcs[i, :-1]))
+        tx_power = tx_power.at[ap].set(jnp.argmax(graph.edges.tx_power[idx, :-1]))
+        mcs = mcs.at[ap].set(jnp.argmax(graph.edges.mcs[idx, :-1]))
 
     return tx_matrix, tx_power, mcs
 
 
-def get_next_context(G, graph, selected_idx, context, internals, encode_fn):
+def get_next_context(graph, context, internals, encode_fn):
     connections = graph.edges
     rssi = jnp.zeros_like(connections.rssi)
     success = jnp.zeros_like(connections.success)
 
-    for i, (ap, sta, data) in enumerate(G.edges(data=True)):
-        if data['type'] == EdgeType.STA and jnp.argmax(connections.selected[i]) == 1:
-            rssi = rssi.at[i].set((internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD)
+    for i in range(graph.senders):
+        ap, sta = graph.senders[i].item(), graph.receivers[i].item()
+        is_sta_ap = jnp.argmax(connections.type[i]) == EdgeType.STA.value
+        rssi_val = (internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD
+
+        if is_sta_ap or rssi_val > RSSI_THR:
+            rssi = rssi.at[i].set(rssi_val)
+
+        if is_sta_ap and jnp.argmax(connections.selected[i]) == IsSelected.TRUE.value:
             success = success.at[i].set(internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap]))
 
     connections = Connection(
         active=connections.active,
         mcs=connections.mcs,
         rssi=rssi,
-        selected=connections.selected.at[selected_idx].set(jnp.array(IsSelected.TRUE)),
+        selected=connections.selected,
         success=success,
         tx_power=connections.tx_power,
         type=connections.type
@@ -139,7 +145,7 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
         actions.append([])
 
         key, conf_key = jax.random.split(key)
-        G, context, graph, ap_sta_idxs = get_initial_configurations(scenario, n_timesteps, conf_key, encode_fn)
+        context, graph, ap_sta_idxs = get_initial_configurations(scenario, n_timesteps, conf_key, encode_fn)
         graph_template = deepcopy(graph)
 
         for _ in range(n_steps):
@@ -157,13 +163,13 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
             z = gen_fn(x, rngs=fm_key)
             connections = decode_fn(z).edges
             graph = graph._replace(edges=connections)
-            tx = connections_to_tx(scenario.associations, n_nodes, key, graph)
+            tx = connections_to_tx(scenario.associations, n_nodes, tx_key, graph)
 
             data_rate, _, internals = scenario(scenario_key, *tx, return_internals=True)
             runs[-1].append(data_rate.item())
             actions[-1].append(scenario.tx_to_action(*tx))
 
-            context = get_next_context(G, graph, selected_idx, context, internals, encode_fn)
+            context = get_next_context(graph, context, internals, encode_fn)
 
     return runs, actions
 

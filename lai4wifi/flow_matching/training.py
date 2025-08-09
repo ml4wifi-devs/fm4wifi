@@ -126,10 +126,6 @@ def main(cfg):
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
-    @jax.jit
-    def generate_fn(params, key, batch):
-        return model.apply(params, *batch, rngs=key, method='gen')
-
     gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
     with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
         gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
