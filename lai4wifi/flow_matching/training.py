@@ -109,8 +109,8 @@ def main(cfg):
         noisy_edges, v_t = noisy_example(batch.edges, t, edges_key)
         cx = batch._replace(
             edges=noisy_edges,
-            nodes=noisy_example(batch.nodes, t, nodes_key)[0],
-            globals=noisy_example(batch.globals, t, globals_key)[0]
+            nodes=noisy_example(batch.nodes, 0, nodes_key)[0],
+            globals=noisy_example(batch.globals, 0, globals_key)[0]
         )
 
         v_pred = model.apply(params, cx, t, rngs=model_key)
