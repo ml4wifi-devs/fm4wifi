@@ -62,8 +62,8 @@ def draw_configurations(scenario, n_timesteps, key, encode_fn):
     )
 
 
-def load(dataset_path, batch_size, n_timesteps, key, encode_fn):
-    dataset = load_dataset(dataset_path)
+def load(dataset_paths, batch_size, n_timesteps, key, encode_fn):
+    dataset = sum((load_dataset(path) for path in dataset_paths), [])
 
     while True:
         edges = 0
@@ -146,7 +146,10 @@ def main(cfg):
     print(model.tabulate(jax.random.PRNGKey(0), *sample))
 
     lr = optax.cosine_onecycle_schedule(cfg.train.n_steps, cfg.optimizer.learning_rate, pct_start=0.1)
-    optimizer = optax.adamw(lr, weight_decay=cfg.optimizer.weight_decay)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(cfg.optimizer.grad_clip),
+        optax.adamw(lr, weight_decay=cfg.optimizer.weight_decay, b1=cfg.optimizer.b1, b2=cfg.optimizer.b2)
+    )
     opt_state = optimizer.init(params)
 
     ckpt_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
