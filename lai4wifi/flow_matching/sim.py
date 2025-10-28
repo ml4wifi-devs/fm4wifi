@@ -106,6 +106,10 @@ def connections_to_tx(associations, n_nodes, key, graph):
     return tx_matrix, tx_power, mcs
 
 
+def tx_to_action(associations, tx_matrix, tx_power, mcs):
+    return {ap: (sta, tx_power[ap].item(), mcs[ap].item()) for ap in associations.keys() for sta in associations[ap] if tx_matrix[ap, sta]}
+
+
 def get_next_context(graph, context, internals, encode_fn):
     connections = graph.edges
     rssi = np.zeros_like(connections.rssi)
@@ -185,7 +189,7 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
 
             data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())
-            actions[-1].append(scenario.tx_to_action(*best))
+            actions[-1].append(tx_to_action(scenario.associations, *best))
             context = get_next_context(graph, context, internals, encode_fn)
 
     return runs, actions

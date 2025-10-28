@@ -20,7 +20,7 @@ from tqdm import tqdm, trange
 
 from lai4wifi.autoencoder.model import GnnAutoencoder
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.sim import get_initial_configurations, get_next_context, connections_to_tx
+from lai4wifi.flow_matching.sim import connections_to_tx, get_initial_configurations, get_next_context, tx_to_action
 from lai4wifi.flow_matching.training import get_network_desc
 
 
@@ -44,7 +44,7 @@ def run_scenario(scenario, n_steps, seed, context_len, model, fm_params, encode_
     fm_params, fm_params_old = deepcopy(fm_params), deepcopy(fm_params)
     optimizer = optax.chain(
         optax.clip_by_global_norm(1.0),
-        optax.adam(3e-4, b1=0.95, b2=0.95)
+        optax.adam(3e-5, b1=0.95, b2=0.95)
     )
     opt_state = optimizer.init(fm_params)
 
@@ -83,7 +83,7 @@ def run_scenario(scenario, n_steps, seed, context_len, model, fm_params, encode_
         # rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
 
         # Our scaling (assume max 3 concurrent tx):
-        Z_c = 3 * 143.0
+        Z_c = 4 * 143.0
         rewards = np.clip(rewards / Z_c, 0.0, 1.0)
 
         @jax.jit
@@ -162,7 +162,7 @@ def run_scenario(scenario, n_steps, seed, context_len, model, fm_params, encode_
         context = get_next_context(graph, context, internals, encode_fn)
 
         logs['sim_data_rate'].append(data_rate.item())
-        logs['actions'].append(scenario.tx_to_action(*best))
+        logs['actions'].append(tx_to_action(scenario.associations, *best))
 
         print({k: v[-1] for k, v in logs.items()})
 
@@ -172,7 +172,7 @@ def run_scenario(scenario, n_steps, seed, context_len, model, fm_params, encode_
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--checkpoint', type=str, default='runs/flow_matching_base')
-    args.add_argument('--n_steps', type=int, default=10000)
+    args.add_argument('--n_steps', type=int, default=200)
     args.add_argument('--output', type=str, default='rl_results.json')
     args.add_argument('--seed', type=int, default=42)
     args = args.parse_args()
