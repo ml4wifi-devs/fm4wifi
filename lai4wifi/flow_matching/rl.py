@@ -30,13 +30,21 @@ N_SAMPLES_EVAL = 32
 BETA = 1.0
 
 
+def gen_sample(graph):
+    edges, nodes, globals = jax.tree.map(lambda x: x[:, :-1], (graph.edges, graph.nodes, graph.globals))
+    return graph._replace(edges=edges, nodes=nodes, globals=globals)
+
+
 def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, v_fn, gen_fn, fm_params, encode_fn, decode_fn):
     key = jax.random.PRNGKey(seed)
     runs, actions = [], []
     n_nodes = len(scenario.associations) + sum(len(stas) for stas in scenario.associations.values())
 
     fm_params, fm_params_old = deepcopy(fm_params), deepcopy(fm_params)
-    optimizer = optax.adam(3e-5, b1=0.95, b2=0.95)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adam(3e-4, b1=0.95, b2=0.95)
+    )
     opt_state = optimizer.init(fm_params)
 
     for _ in range(n_reps):
@@ -49,28 +57,17 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, v_fn, gen_fn, fm_
 
         for step in trange(n_steps):
             key, sel_key, fm_key, tx_key, scenario_key, train_key = jax.random.split(key, 6)
+            xs = []
 
-            selected_idx = jax.random.choice(sel_key, ap_sta_idxs).item()
-            network_desc = get_network_desc(graph, selected_idx, encode_fn)
+            for _ in range(N_SAMPLES_TRAIN):
+                sel_key, subkey = jax.random.split(sel_key)
+                selected_idx = jax.random.choice(subkey, ap_sta_idxs).item()
+                network_desc = get_network_desc(graph, selected_idx, encode_fn)
+                all = jax.tree.map(lambda *x: np.stack(x, axis=1), network_desc, *context)
+                xs.append(network_desc._replace(edges=all.edges, nodes=all.nodes, globals=all.globals))
 
-            all_gen = jax.tree.map(lambda *x: np.stack(x, axis=1), network_desc, *context[:-1])
-            x_gen = network_desc._replace(
-                edges=all_gen.edges,
-                nodes=all_gen.nodes,
-                globals=all_gen.globals
-            )
-            x_gen_train = jraph.batch([x_gen for _ in range(N_SAMPLES_TRAIN)])
-            x_gen_eval = jraph.batch([x_gen for _ in range(N_SAMPLES_EVAL)])
-
-            all_train = jax.tree.map(lambda *x: np.stack(x, axis=1), network_desc, *context)
-            x_train = network_desc._replace(
-                edges=all_train.edges,
-                nodes=all_train.nodes,
-                globals=all_train.globals
-            )
-            x_train = jraph.batch([x_train for _ in range(BS_TRAIN)])
-
-            dec = decode_fn(gen_fn(fm_params_old, x_gen_train, rngs=fm_key))
+            x_gen = jraph.batch([gen_sample(x) for x in xs])
+            dec = decode_fn(gen_fn(fm_params_old, x_gen, rngs=fm_key))
             rewards = np.zeros(N_SAMPLES_TRAIN)
 
             for i, zt in enumerate(jraph.unbatch(dec)):
@@ -83,11 +80,13 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, v_fn, gen_fn, fm_
                 rewards[i] = data_rate
 
             # DiffusionNFT paper:
+            # Z_c = global reward stddev
             # rewards = rewards - np.mean(rewards)
             # rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
 
             # Our scaling (for max 3 concurrent tx):
-            rewards /= 3 * 143.0
+            Z_c = 3 * 143.0
+            rewards = np.clip(rewards / Z_c, 0.0, 1.0)
 
             @jax.jit
             def loss_fn(params, key, batch, rewards, params_old):
@@ -137,14 +136,17 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, v_fn, gen_fn, fm_
             for i in range(N_SAMPLES_TRAIN // BS_TRAIN):
                 start, end = i * BS_TRAIN, (i + 1) * BS_TRAIN
                 batch_rewards = rewards[start:end]
+                batch_train = jraph.batch(xs[start:end])
 
                 train_key, subkey = jax.random.split(train_key)
-                fm_params, opt_state, loss = step_fn(fm_params, opt_state, subkey, x_train, batch_rewards, fm_params_old)
+                fm_params, opt_state, loss = step_fn(fm_params, opt_state, subkey, batch_train, batch_rewards, fm_params_old)
 
             fm_params_old = optax.incremental_update(fm_params, fm_params_old, step_size=max(1 - step * 0.001, 0.5))
 
             # https://arxiv.org/abs/2412.08296
-            dec = decode_fn(gen_fn(fm_params, x_gen_eval, rngs=fm_key))
+            x_eval = gen_sample(xs[0])
+            x_eval = jraph.batch([x_eval for _ in range(N_SAMPLES_EVAL)])
+            dec = decode_fn(gen_fn(fm_params, x_eval, rngs=fm_key))
             best, best_val = dec[0], float('-inf')
 
             for zt in jraph.unbatch(dec):
