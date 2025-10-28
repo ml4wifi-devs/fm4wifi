@@ -1,0 +1,12 @@
+ckpt:
+  intermediate: true
+  freq: 1
+log:
+  type: 'wandb'
+  freq: 1
+nft:
+  n_samples: 128
+  batch_size: 32
+  beta: 1.0
+n_steps: 100
+seed: 42

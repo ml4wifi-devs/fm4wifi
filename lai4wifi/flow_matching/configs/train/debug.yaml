@@ -10,4 +10,5 @@ val:
 batch_size: 256
 n_steps: 1000
 n_timesteps: 6
+n_eval_samples: 1
 seed: 42

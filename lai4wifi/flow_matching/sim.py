@@ -12,7 +12,7 @@ import jraph
 import numpy as np
 import networkx as nx
 import orbax.checkpoint as ocp
-from mapc_research.envs.test_scenarios import EXEMPLARY_SCENARIOS as ALL_SCENARIOS
+from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
@@ -22,9 +22,6 @@ from lai4wifi.autoencoder.model import GnnAutoencoder
 from lai4wifi.autoencoder.utils import nx_to_jraph
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import get_network_desc
-
-
-N_SAMPLES_EVAL = 32
 
 
 def associations_to_nx(scenario):
@@ -142,7 +139,7 @@ def get_next_context(graph, context, internals, encode_fn):
     return context[1:]
 
 
-def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn, decode_fn):
+def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, gen_fn, encode_fn, decode_fn):
     key = jax.random.PRNGKey(seed)
     runs = []
     actions = []
@@ -171,11 +168,11 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, seed, gen_fn, encode_fn
             )
 
             # https://arxiv.org/abs/2412.08296
-            x_eval = jraph.batch([x for _ in range(N_SAMPLES_EVAL)])
-            dec = decode_fn(gen_fn(x_eval, rngs=fm_key))
-            best, best_val = dec[0], float('-inf')
+            x_eval = jraph.batch([x for _ in range(n_samples_eval)])
+            z = gen_fn(x_eval, rngs=fm_key)
+            best, best_val = None, float('-inf')
 
-            for zt in jraph.unbatch(dec):
+            for zt in jraph.unbatch(decode_fn(z)):
                 tx_key, subkey = jax.random.split(tx_key)
                 tx = connections_to_tx(scenario.associations, n_nodes, subkey, graph)
 
@@ -218,11 +215,14 @@ if __name__ == '__main__':
     encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
     decode_fn = jax.jit(partial(gnn.apply, gnn_params, method='decode'))
 
+    scenarios = [
+        residential_scenario(seed=101, n_steps=500, x_apartments=2, y_apartments=2, n_sta_per_ap=4, size=30.0)
+    ]
     all_results = []
 
-    for scenario in tqdm(ALL_SCENARIOS, desc='Scenarios'):
+    for scenario in tqdm(scenarios, desc='Scenarios'):
         runs, actions = run_scenario(
-            scenario, args.n_reps, scenario.n_steps, fm_cfg.train.n_timesteps, args.seed, gen_fn, encode_fn, decode_fn
+            scenario, args.n_reps, scenario.n_steps, fm_cfg.train.n_timesteps, fm_cfg.train.n_eval_samples, args.seed, gen_fn, encode_fn, decode_fn
         )
         all_results.append([{
             'runs': runs,
