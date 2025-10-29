@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
-
+from jax.tree_util import register_pytree_node_class
 
 @jax.tree_util.register_dataclass
 @dataclass
@@ -17,9 +17,24 @@ class Connection:
     type: jax.Array
 
 
+@register_pytree_node_class
 class JaxEnum(enum.Enum):
     def __jax_array__(self):
         return jax.nn.one_hot(jnp.asarray(self.value), len(type(self)))
+
+    def __init_subclass__(cls) -> None:
+        register_pytree_node_class(cls)
+        return super().__init_subclass__()
+
+    def tree_flatten(self):
+        children = (self.__jax_array__(),)
+        aux_data = self
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return aux_data
+
 
 
 class EdgeType(JaxEnum):
