@@ -20,7 +20,7 @@ dependencies = [
     "jax-ai-stack~=2025.10.28",
     "jraph~=0.0.6.dev0",
     "lz4~=4.4.4",
-    "mapc-sim~=0.2.2",
+    "mapc_optimal_research@git+https://github.com/ml4wifi-devs/mapc-optimal-research",
     "matplotlib~=3.10.7",
     "networkx~=3.5",
     "tqdm~=4.67.1",
