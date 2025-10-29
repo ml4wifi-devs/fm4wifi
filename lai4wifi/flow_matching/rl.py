@@ -62,7 +62,7 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
             sample_key, subkey = jax.random.split(sample_key)
             selected_idx = jax.random.choice(subkey, ap_sta_idxs).item()
             network_desc = get_network_desc(graph, selected_idx, encode_fn)
-            all = jax.tree.map(lambda *x: np.stack(x, axis=1), network_desc, *context)
+            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context)
             xs.append(network_desc._replace(edges=all.edges, nodes=all.nodes, globals=all.globals))
 
         x_gen = jraph.batch([gen_sample(x) for x in xs])
@@ -119,18 +119,13 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
             v_plus = (1 - beta) * v_pred_old.edges + beta * v_pred.edges
             v_minus = (1 + beta) * v_pred_old.edges - beta * v_pred.edges
 
-            # Mask out padding edges and match rewards to edges
-            mask = jraph.get_edge_padding_mask(v_pred)
-            edges_per_graph = mask.sum() // rewards.shape[0]
-            rewards_edges = jnp.arange(mask.shape[0]) // edges_per_graph
-            rewards_edges = rewards_edges * mask
-            rewards = rewards[rewards_edges] * mask
+            # Assume all graphs in the batch are the same size
+            rewards = jax.jit(jnp.repeat, static_argnames=['axis', 'total_repeat_length'])(rewards, v_pred.n_edge, axis=0, total_repeat_length=v_pred.edges.shape[0])
 
             loss_1 = rewards * optax.squared_error(v_plus, v_t).mean(axis=-1)
             loss_2 = (1 - rewards) * optax.squared_error(v_minus, v_t).mean(axis=-1)
             loss = loss_1 + loss_2
-            loss = (mask * loss).sum() / mask.sum()
-            return loss
+            return loss.mean()
 
         @jax.jit
         def step_fn(params, opt_state, key, *batch):

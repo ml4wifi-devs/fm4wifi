@@ -39,6 +39,11 @@ def make_batch(graph_list, pad=True):
     return batch
 
 
+def unbatch(batched_graph):
+    graphs = jraph.unpad_with_graphs(batched_graph)
+    return jraph.unbatch(graphs)
+
+
 def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
     edges, senders, receivers = zip(*[[jax.tree.map(jnp.atleast_1d, Connection(**data)), u, v] for u, v, data in G.edges(data=True)])
     senders, receivers = senders + receivers, receivers + senders
