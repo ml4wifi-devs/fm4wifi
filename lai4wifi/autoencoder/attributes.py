@@ -33,7 +33,7 @@ class JaxEnum(enum.Enum):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return aux_data
+        return children[0]
 
 
 
