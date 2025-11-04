@@ -6,8 +6,8 @@ import jraph
 import flax.linen as nn
 from jraph._src.utils import segment_mean
 
-from lai4wifi.autoencoder.model import make_mlp, make_embed_fn
-from lai4wifi.autoencoder.utils import clear_graph
+from lai4wifi.graphs.model import make_mlp, make_embed_fn
+from lai4wifi.graphs.utils import clear_graph
 
 
 class FeedForwardBlock(nn.Module):

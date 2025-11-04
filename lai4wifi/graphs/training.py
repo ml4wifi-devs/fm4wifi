@@ -16,9 +16,9 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.autoencoder.dataset import load_dataset
-from lai4wifi.autoencoder.model import GnnAutoencoder
-from lai4wifi.autoencoder.utils import make_batch
+from lai4wifi.graphs.dataset import load_dataset
+from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import make_batch
 
 
 def load(batch_size, key, val_dataset=False):

@@ -5,8 +5,8 @@ import jraph
 import flax.linen as nn
 from jraph._src.utils import segment_mean
 
-from lai4wifi.autoencoder.attributes import *
-from lai4wifi.autoencoder.utils import clear_graph
+from lai4wifi.graphs.attributes import *
+from lai4wifi.graphs.utils import clear_graph
 
 
 class MLP(nn.Module):

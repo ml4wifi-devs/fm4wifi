@@ -1,9 +1,9 @@
 import jax
 import networkx as nx
 
-from lai4wifi.autoencoder.attributes import *
-from lai4wifi.autoencoder.model import GnnAutoencoder
-from lai4wifi.autoencoder.utils import nx_to_jraph, make_batch
+from lai4wifi.graphs.attributes import *
+from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import nx_to_jraph, make_batch
 
 
 G = nx.Graph([

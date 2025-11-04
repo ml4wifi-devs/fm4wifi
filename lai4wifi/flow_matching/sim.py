@@ -20,12 +20,12 @@ from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
-from lai4wifi.autoencoder.attributes import *
-from lai4wifi.autoencoder.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
-from lai4wifi.autoencoder.model import GnnAutoencoder
-from lai4wifi.autoencoder.utils import nx_to_jraph
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import get_network_desc
+from lai4wifi.graphs.attributes import *
+from lai4wifi.graphs.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
+from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import nx_to_jraph
 
 
 def associations_to_nx(scenario):

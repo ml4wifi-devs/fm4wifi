@@ -6,8 +6,8 @@ import lz4.frame
 import networkx as nx
 from tqdm import tqdm
 
-from lai4wifi.autoencoder.attributes import *
-from lai4wifi.autoencoder.utils import nx_to_jraph
+from lai4wifi.graphs.attributes import *
+from lai4wifi.graphs.utils import nx_to_jraph
 
 
 MAX_TX_POWER = 20.0

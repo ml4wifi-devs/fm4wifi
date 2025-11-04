@@ -19,10 +19,10 @@ from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
-from lai4wifi.autoencoder.model import GnnAutoencoder
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.sim import connections_to_tx, get_initial_configurations, get_next_context, tx_to_action
 from lai4wifi.flow_matching.training import get_network_desc
+from lai4wifi.graphs.model import GnnAutoencoder
 
 
 def gen_sample(graph):

@@ -16,10 +16,10 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.autoencoder.attributes import *
-from lai4wifi.autoencoder.dataset import load_dataset
-from lai4wifi.autoencoder.model import GnnAutoencoder
-from lai4wifi.autoencoder.utils import make_batch
+from lai4wifi.graphs.attributes import *
+from lai4wifi.graphs.dataset import load_dataset
+from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import make_batch
 
 
 def get_network_desc(target_conf, selected_idx, encode_fn):
