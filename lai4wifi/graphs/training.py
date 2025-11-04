@@ -136,7 +136,10 @@ def main(cfg):
     params = model.init({'params': init_key, 'lai': init_key}, sample)
     print(model.tabulate(jax.random.PRNGKey(0), sample))
 
-    optimizer = optax.adamw(**cfg.optimizer)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(cfg.optimizer.grad_clip),
+        optax.adamw(cfg.optimizer.learning_rate, weight_decay=cfg.optimizer.weight_decay, b1=cfg.optimizer.b1, b2=cfg.optimizer.b2)
+    )
     opt_state = optimizer.init(params)
 
     ckpt_path = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir

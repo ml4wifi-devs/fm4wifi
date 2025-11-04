@@ -7,8 +7,8 @@ log:
 val:
   n_steps: 10
   freq: 100
-n_steps: 4000
+n_steps: 10000
 batch_size: 128
 loss_weights: [1, 1, 1, 1, 1, 1, 1]
-kl_loss_weight: 0.7
+kl_loss_weight: 0.0
 seed: 42
