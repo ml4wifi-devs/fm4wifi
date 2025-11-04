@@ -47,12 +47,12 @@ def load_model(ckpt_path):
 
 
 if __name__ == '__main__':
-    model, params = load_model('../autoencoder/runs/gnn_ae_base')
-    convert_dataset('../autoencoder/datasets/f_opt_dataset_graph.pkl.lz4', 'datasets/f_opt_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../autoencoder/datasets/f_opt_val_dataset_graph.pkl.lz4', 'datasets/f_opt_val_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../autoencoder/datasets/t_opt_dataset_graph.pkl.lz4', 'datasets/t_opt_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../autoencoder/datasets/t_opt_val_dataset_graph.pkl.lz4', 'datasets/t_opt_val_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../autoencoder/datasets/h_mab_dataset_graph.pkl.lz4', 'datasets/h_mab_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../autoencoder/datasets/h_mab_val_dataset_graph.pkl.lz4', 'datasets/h_mab_val_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../autoencoder/datasets/random_dataset_graph.pkl.lz4', 'datasets/random_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../autoencoder/datasets/random_val_dataset_graph.pkl.lz4', 'datasets/random_val_dataset_graph.pkl.lz4', model, params)
+    model, params = load_model('../graphs/runs/gnn_ae_base')
+    convert_dataset('../graphs/datasets/f_opt_dataset_graph.pkl.lz4', 'datasets/f_opt_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/f_opt_val_dataset_graph.pkl.lz4', 'datasets/f_opt_val_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/t_opt_dataset_graph.pkl.lz4', 'datasets/t_opt_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/t_opt_val_dataset_graph.pkl.lz4', 'datasets/t_opt_val_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/h_mab_dataset_graph.pkl.lz4', 'datasets/h_mab_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/h_mab_val_dataset_graph.pkl.lz4', 'datasets/h_mab_val_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/random_dataset_graph.pkl.lz4', 'datasets/random_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/random_val_dataset_graph.pkl.lz4', 'datasets/random_val_dataset_graph.pkl.lz4', model, params)

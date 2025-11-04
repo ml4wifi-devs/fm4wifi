@@ -14,7 +14,7 @@ val_dataset: [
   'datasets/h_mab_val_dataset_graph.pkl.lz4',
   'datasets/t_opt_val_dataset_graph.pkl.lz4'
 ]
-gnn_path: '../autoencoder/runs/gnn_ae_base'
+gnn_path: '../graphs/runs/gnn_ae_base'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
