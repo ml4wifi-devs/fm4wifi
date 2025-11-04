@@ -1,5 +1,7 @@
 import os
 os.environ['XLA_FLAGS'] = '--xla_gpu_enable_triton_gemm=false'
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
 from functools import partial
@@ -34,7 +36,7 @@ def get_network_desc(target_conf, selected_idx, encode_fn):
     tx_power = jnp.zeros((edge_types.shape[0], len(TxPowerValue)))
     tx_power = tx_power.at[:].set(jnp.array(TxPowerValue.NA))
 
-    desc_graph = target_conf._replace(edges=Connection(
+    edges = Connection(
         active=active,
         mcs=mcs,
         rssi=rssi,
@@ -42,7 +44,9 @@ def get_network_desc(target_conf, selected_idx, encode_fn):
         success=success,
         tx_power=tx_power,
         type=target_conf.edges.type
-    ))
+    )
+    edges = jax.tree.map(lambda x: x.astype(jnp.float64), edges)
+    desc_graph = target_conf._replace(edges=edges)
 
     return encode_fn(desc_graph)
 

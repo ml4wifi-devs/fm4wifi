@@ -1,5 +1,9 @@
-import json
 import os
+os.environ['XLA_FLAGS'] = '--xla_gpu_enable_triton_gemm=false'
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+os.environ['JAX_ENABLE_X64'] = 'True'
+
+import json
 from argparse import ArgumentParser
 from collections import defaultdict
 from copy import deepcopy
@@ -123,7 +127,7 @@ def get_next_context(graph, context, internals, encode_fn):
         if is_sta_ap and np.argmax(connections.selected[i]) == IsSelected.TRUE.value:
             success[i] = internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap])
 
-    connections = Connection(
+    edges = Connection(
         active=connections.active,
         mcs=connections.mcs,
         rssi=rssi,
@@ -132,7 +136,8 @@ def get_next_context(graph, context, internals, encode_fn):
         tx_power=connections.tx_power,
         type=connections.type
     )
-    graph = graph._replace(edges=connections)
+    edges = jax.tree.map(lambda x: x.astype(jnp.float64), edges)
+    graph = graph._replace(edges=edges)
     next_conf = encode_fn(graph)
 
     context.append(next_conf)

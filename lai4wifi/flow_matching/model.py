@@ -91,7 +91,7 @@ class TimeEmbedding(nn.Module):
     def get_sinusoidal_embeddings(timesteps, embedding_dim, min_timescale=1, max_timescale=1.0e4):
         num_timescales = float(embedding_dim // 2)
         log_timescale_increment = jnp.log(max_timescale / min_timescale) / num_timescales
-        inv_timescales = min_timescale * jnp.exp(jnp.arange(num_timescales, dtype=jnp.float32) * -log_timescale_increment)
+        inv_timescales = min_timescale * jnp.exp(jnp.arange(num_timescales, dtype=jnp.float64) * -log_timescale_increment)
         time = jnp.expand_dims(timesteps, -1) * jnp.expand_dims(inv_timescales, 0)
         signal = jnp.concatenate([jnp.cos(time), jnp.sin(time)], axis=-1)
         signal = signal.reshape([*timesteps.shape, embedding_dim])
@@ -120,7 +120,7 @@ class FlowMatching(nn.Module):
             nodes=x.nodes.reshape(x.nodes.shape[0], -1),
             globals=x.globals.reshape(x.globals.shape[0], -1)
         )
-        t = TimeEmbedding(4 * x.edges.shape[-1], x.edges.shape[-1], self.drop_rate, self.dtype)(t, training=training)
+        t = TimeEmbedding(2 * x.edges.shape[-1], x.edges.shape[-1], self.drop_rate, self.dtype)(t, training=training)
         x = x._replace(edges=x.edges + t)
 
         for _ in range(self.gnn_layers):

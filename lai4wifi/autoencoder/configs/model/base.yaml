@@ -3,4 +3,4 @@ encoder_features: [128, 32]
 decoder_features: [128, 32]
 latent_features: 64
 n_layers: 3
-dtype: "float32"
+dtype: "float64"

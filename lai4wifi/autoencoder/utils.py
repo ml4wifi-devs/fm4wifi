@@ -50,8 +50,8 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
     edges += edges
 
     graph = jraph.GraphsTuple(
-        nodes=jnp.empty((len(G.nodes), 0), dtype=jnp.float32),
-        edges=jax.tree.map(lambda *args: jnp.stack(args), *edges),
+        nodes=jnp.empty((len(G.nodes), 0), dtype=jnp.float64),
+        edges=jax.tree.map(lambda *args: jnp.stack(args).astype(jnp.float64), *edges),
         receivers=jnp.asarray(receivers),
         senders=jnp.asarray(senders),
         globals=None,
@@ -73,7 +73,7 @@ def clear_graph(x):
 
 
 def eig_laplacian(senders, receivers, n_nodes, k):
-    adj = jnp.zeros((n_nodes, n_nodes), dtype=jnp.float32)
+    adj = jnp.zeros((n_nodes, n_nodes), dtype=jnp.float64)
     adj = adj.at[(senders, receivers)].set(1)
     D = jnp.diag(adj.sum(axis=1))
     L = D - adj

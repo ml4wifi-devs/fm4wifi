@@ -1,5 +1,9 @@
-import logging
 import os
+os.environ['XLA_FLAGS'] = '--xla_gpu_enable_triton_gemm=false'
+os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
+os.environ['JAX_ENABLE_X64'] = 'True'
+
+import logging
 from glob import glob
 from itertools import chain
 
@@ -37,7 +41,7 @@ def load(batch_size, key, val_dataset=False):
 
 @hydra.main(config_path="configs", config_name="gnn", version_base=None)
 def main(cfg):
-    loss_weights = jnp.array(cfg.train.loss_weights)
+    loss_weights = jnp.array(cfg.train.loss_weights, dtype=jnp.float64)
     loss_weights /= loss_weights.sum()
     kl_loss_weight = cfg.train.kl_loss_weight
 
