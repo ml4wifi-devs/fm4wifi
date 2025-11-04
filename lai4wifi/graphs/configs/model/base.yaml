@@ -1,6 +1,6 @@
-embed_features: 32
-encoder_features: [128, 32]
-decoder_features: [32, 128]
-latent_features: 64
-n_layers: 3
+embed_features: 24
+encoder_features: [32, 16]
+decoder_features: [16, 32]
+latent_features: 16
+n_layers: 2
 dtype: "float64"
