@@ -221,7 +221,7 @@ if __name__ == '__main__':
     decode_fn = jax.jit(partial(gnn.apply, gnn_params, method='decode'))
 
     scenarios = [
-        residential_scenario(seed=101, n_steps=500, x_apartments=2, y_apartments=2, n_sta_per_ap=4, size=30.0)
+        residential_scenario(seed=12, n_steps=500, x_apartments=2, y_apartments=2, n_sta_per_ap=4, size=30.0)
     ]
     all_results = []
 

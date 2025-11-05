@@ -200,7 +200,7 @@ def main(cfg):
     decode_fn = jax.jit(partial(gnn.apply, gnn_params, method='decode'))
 
     for scenario in tqdm([
-        residential_scenario(seed=101, x_apartments=2, y_apartments=2, n_sta_per_ap=4, size=30.0)
+        residential_scenario(seed=12, x_apartments=2, y_apartments=2, n_sta_per_ap=4, size=30.0)
     ], desc='Scenarios'):
         run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn)
 
