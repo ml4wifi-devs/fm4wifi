@@ -21,7 +21,7 @@ from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.sim import connections_to_tx, get_initial_configurations, get_next_context, tx_to_action
-from lai4wifi.flow_matching.training import get_network_desc
+from lai4wifi.flow_matching.training import draw_t, get_network_desc, jax_repeat, noisy_example
 from lai4wifi.graphs.model import GnnAutoencoder
 
 
@@ -94,22 +94,14 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
 
         @jax.jit
         def loss_fn(params, key, batch, rewards, params_old):
-            z_key, t_key, model_key = jax.random.split(key, 3)
-            t = jax.random.uniform(t_key, minval=0.0, maxval=0.99)
+            t_key, edges_key, nodes_key, globals_key, model_key = jax.random.split(key, 5)
 
-            def noisy_example(batch, t, z_key):
-                z = jax.random.normal(z_key, (batch.shape[0], batch.shape[-1]))
-                x = batch[:, -1]
-                x_t = (1 - t) * z + t * x
-                v_t = x - z
-                return batch.at[:, -1].set(x_t), v_t
-
-            edges_key, nodes_key, globals_key = jax.random.split(z_key, 3)
-            noisy_edges, v_t = noisy_example(batch.edges, t, edges_key)
+            t = draw_t(t_key, batch)
+            noisy_edges, v_t = noisy_example(edges_key, batch.edges, t)
             cx = batch._replace(
                 edges=noisy_edges,
-                nodes=noisy_example(batch.nodes, 0, nodes_key)[0],
-                globals=noisy_example(batch.globals, 0, globals_key)[0]
+                nodes=noisy_example(nodes_key, batch.nodes)[0],
+                globals=noisy_example(globals_key, batch.globals)[0]
             )
 
             # https://www.arxiv.org/abs/2509.16117
@@ -121,7 +113,7 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
             v_minus = (1 + beta) * v_pred_old.edges - beta * v_pred.edges
 
             # Assume all graphs in the batch are the same size
-            rewards = jax.jit(jnp.repeat, static_argnames=['axis', 'total_repeat_length'])(rewards, v_pred.n_edge, axis=0, total_repeat_length=v_pred.edges.shape[0])
+            rewards = jax_repeat(rewards, v_pred.n_edge, axis=0, total_repeat_length=v_pred.edges.shape[0])
 
             loss_1 = rewards * optax.squared_error(v_plus, v_t).mean(axis=-1)
             loss_2 = (1 - rewards) * optax.squared_error(v_minus, v_t).mean(axis=-1)

@@ -3,12 +3,12 @@ ckpt:
   freq: 500
 log:
   type: 'stdout'
-  freq: 10
+  freq: 1
 val:
   n_steps: 2
-  freq: 20
-batch_size: 256
+  freq: 5
+batch_size: 64
 n_steps: 1000
-n_timesteps: 6
-n_eval_samples: 1
+n_timesteps: 2
+n_eval_samples: 4
 seed: 42

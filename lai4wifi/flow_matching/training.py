@@ -81,40 +81,51 @@ def load(dataset_paths, batch_size, n_timesteps, key, encode_fn):
             if edges + graph_size < batch_size:
                 batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, encode_fn))
                 edges += graph_size
+            elif edges == 0:
+                continue
             else:
                 break
 
         yield make_batch(batch)
 
 
+@partial(jax.jit, static_argnames=['axis', 'total_repeat_length'])
+def jax_repeat(a, repeats, axis, total_repeat_length):
+    return jnp.repeat(a, repeats, axis, total_repeat_length=total_repeat_length)
+
+
+def draw_t(key, batch, schedule='uniform'):
+    if schedule == 'log-normal':
+        t = jax.random.normal(key, (batch.n_edge.shape[0], 1))
+        t = 1 / (1 + jnp.exp(-t))
+    elif schedule == 'uniform':
+        t = jax.random.uniform(key, (batch.n_edge.shape[0], 1), minval=0.0, maxval=0.99)
+    else:
+        raise ValueError(f'Invalid schedule: {schedule}')
+    return jax_repeat(t, batch.n_edge, axis=0, total_repeat_length=batch.edges.shape[0])
+
+
+def noisy_example(key, batch, t=0):
+    z = jax.random.normal(key, (batch.shape[0], batch.shape[-1]))
+    x = batch[:, -1]
+    x_t = (1 - t) * z + t * x
+    v_t = x - z
+    return batch.at[:, -1].set(x_t), v_t
+
+
 @hydra.main(config_path='configs', config_name='fm', version_base=None)
 def main(cfg):
 
     @jax.jit
-    def loss_fn(params, key, batch, schedule='uniform'):
-        z_key, t_key, model_key = jax.random.split(key, 3)
+    def loss_fn(params, key, batch):
+        t_key, edges_key, nodes_key, globals_key, model_key = jax.random.split(key, 5)
 
-        if schedule == 'log-normal':
-            t = jax.random.normal(t_key)
-            t = 1 / (1 + jnp.exp(-t))
-        elif schedule == 'uniform':
-            t = jax.random.uniform(t_key, minval=0.0, maxval=0.99)
-        else:
-            raise ValueError(f'Invalid schedule: {schedule}')
-
-        def noisy_example(batch, t, z_key):
-            z = jax.random.normal(z_key, (batch.shape[0], batch.shape[-1]))
-            x = batch[:, -1]
-            x_t = (1 - t) * z + t * x
-            v_t = x - z
-            return batch.at[:, -1].set(x_t), v_t
-
-        edges_key, nodes_key, globals_key = jax.random.split(z_key, 3)
-        noisy_edges, v_t = noisy_example(batch.edges, t, edges_key)
+        t = draw_t(t_key, batch)
+        noisy_edges, v_t = noisy_example(edges_key, batch.edges, t)
         cx = batch._replace(
             edges=noisy_edges,
-            nodes=noisy_example(batch.nodes, 0, nodes_key)[0],
-            globals=noisy_example(batch.globals, 0, globals_key)[0]
+            nodes=noisy_example(nodes_key, batch.nodes)[0],
+            globals=noisy_example(globals_key, batch.globals)[0]
         )
 
         v_pred = model.apply(params, cx, t, rngs=model_key)
@@ -143,7 +154,7 @@ def main(cfg):
     data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key, encode_fn)
     val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, encode_fn))
     sample = next(iter(data))
-    sample = (sample, jnp.zeros(sample.edges.shape[0]))
+    sample = (sample, jnp.zeros((sample.edges.shape[0], 1)))
 
     model = FlowMatching(**cfg.model)
     params = model.init({'params': init_key}, *sample)
