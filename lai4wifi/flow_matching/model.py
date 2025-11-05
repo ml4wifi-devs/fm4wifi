@@ -18,10 +18,10 @@ class FeedForwardBlock(nn.Module):
     @nn.compact
     def __call__(self, x, training=True):
         out_dim = x.shape[-1]
-        x = nn.Dense(self.ff_dim, dtype=self.dtype, use_bias=False)(x)
+        x = nn.Dense(self.ff_dim, param_dtype=self.dtype, use_bias=False)(x)
         x = nn.gelu(x)
         x = nn.Dropout(self.drop_rate)(x, deterministic=not training)
-        x = nn.Dense(out_dim, dtype=self.dtype, use_bias=False)(x)
+        x = nn.Dense(out_dim, param_dtype=self.dtype, use_bias=False)(x)
         x = nn.Dropout(self.drop_rate)(x, deterministic=not training)
         return x
 
@@ -35,17 +35,17 @@ class TransformerBlock(nn.Module):
     @nn.compact
     def __call__(self, x, mask, training=True):
         residual = x
-        x = nn.LayerNorm()(x)
+        x = nn.LayerNorm(param_dtype=self.dtype)(x)
         x = nn.MultiHeadDotProductAttention(
             num_heads=self.n_heads,
             qkv_features=x.shape[-1],
-            dtype=self.dtype,
+            param_dtype=self.dtype,
             use_bias=False
         )(x, mask=mask)
         x = x + residual
 
         residual = x
-        x = nn.LayerNorm()(x)
+        x = nn.LayerNorm(param_dtype=self.dtype)(x)
         x = FeedForwardBlock(self.ff_dim, self.drop_rate, self.dtype)(x, training=training)
         x = x + residual
 
@@ -62,12 +62,12 @@ class Transformer(nn.Module):
 
     @nn.compact
     def __call__(self, x, training=True):
-        x = nn.Dense(self.dim, dtype=self.dtype, use_bias=False)(x)
+        x = nn.Dense(self.dim, param_dtype=self.dtype, use_bias=False)(x)
 
         for _ in range(self.n_layers):
             x = TransformerBlock(self.n_heads, self.ff_dim, self.drop_rate, self.dtype)(x, mask=None, training=training)
 
-        x = nn.LayerNorm(dtype=self.dtype)(x)
+        x = nn.LayerNorm(param_dtype=self.dtype)(x)
         return x
 
 
