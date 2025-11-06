@@ -16,13 +16,13 @@ class MLP(nn.Module):
     @nn.compact
     def __call__(self, x):
         residual = x
-        x = nn.LayerNorm(param_dtype=self.dtype)(x)
+        x = nn.LayerNorm(dtype=self.dtype)(x)
 
         for i, size in enumerate(self.features):
-            x = nn.Dense(size, param_dtype=self.dtype)(x)
+            x = nn.Dense(size, dtype=self.dtype)(x)
             x = nn.gelu(x)
 
-        r = nn.Dense(self.features[-1], param_dtype=self.dtype)(residual)
+        r = nn.Dense(self.features[-1], dtype=self.dtype)(residual)
         x = x + r
 
         return x
@@ -31,7 +31,7 @@ class MLP(nn.Module):
 def make_embed_fn(latent_size, dtype):
     @jraph.concatenated_args
     def embed_fn(inputs):
-        return nn.Dense(latent_size, param_dtype=dtype)(inputs)
+        return nn.Dense(latent_size, dtype=dtype)(inputs)
 
     return embed_fn
 
@@ -94,13 +94,13 @@ class Decoder(nn.Module):
         x = nn.gelu(z.edges)
 
         edges = Connection(
-            active=nn.Dense(len(IsActive), param_dtype=self.dtype)(x),
-            mcs=nn.Dense(len(McsValue), param_dtype=self.dtype)(x),
-            rssi=nn.Dense(1, param_dtype=self.dtype)(x),
-            selected=nn.Dense(len(IsSelected), param_dtype=self.dtype)(x),
-            success=nn.Dense(1, param_dtype=self.dtype)(x),
-            tx_power=nn.Dense(len(TxPowerValue), param_dtype=self.dtype)(x),
-            type=nn.Dense(len(EdgeType), param_dtype=self.dtype)(x)
+            active=nn.Dense(len(IsActive), dtype=self.dtype)(x),
+            mcs=nn.Dense(len(McsValue), dtype=self.dtype)(x),
+            rssi=nn.Dense(1, dtype=self.dtype)(x),
+            selected=nn.Dense(len(IsSelected), dtype=self.dtype)(x),
+            success=nn.Dense(1, dtype=self.dtype)(x),
+            tx_power=nn.Dense(len(TxPowerValue), dtype=self.dtype)(x),
+            type=nn.Dense(len(EdgeType), dtype=self.dtype)(x)
         )
 
         return z._replace(edges=edges)
