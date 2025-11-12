@@ -117,6 +117,8 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
         all_xs.append(tx_to_conf(scenario, *tx, internals, encode_fn))
         all_rewards[i] = data_rate
 
+    Z_c = all_rewards.std()
+
     for step in trange(cfg.train.n_steps, desc='Training steps'):
         key, sample_key, train_key, eval_key = jax.random.split(key, 4)
         xs, rewards = [], []
@@ -134,14 +136,9 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
             rewards.append(all_rewards[graphs_idxs[-1]])
 
         # DiffusionNFT paper:
-        # Z_c = global reward stddev
-        # rewards = rewards - np.mean(rewards)
-        # rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
-
-        # Our scaling (T-Optimal as an upper bound):
-        Z_c = 315.4
         rewards = np.array(rewards)
-        rewards = np.clip(rewards / Z_c, 0.0, 1.0)
+        rewards = rewards - np.mean(rewards)
+        rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
 
         log_dict = {}
         log_dict['step'] = step
