@@ -66,9 +66,10 @@ def get_initial_configurations(scenario, n_timesteps, key, encode_fn):
         selected_sta = graph.receivers[selected_idx].item()
 
         G = associations_to_nx(scenario)
-        G.edges[sharing_ap, selected_sta]['selected'] = IsSelected.TRUE
-        G.edges[sharing_ap, selected_sta]['tx_power'] = TxPowerValue.LVL_1
         G.edges[sharing_ap, selected_sta]['mcs'] = McsValue.MCS_11
+        G.edges[sharing_ap, selected_sta]['selected'] = IsSelected.TRUE
+        G.edges[sharing_ap, selected_sta]['success'] = 1.0
+        G.edges[sharing_ap, selected_sta]['tx_power'] = TxPowerValue.LVL_1
         graph = nx_to_jraph(G)
 
         tx = connections_to_tx(scenario.associations, n_nodes, tx_key, graph)

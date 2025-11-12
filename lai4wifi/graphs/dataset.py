@@ -36,7 +36,7 @@ def dataset_conf_to_nx(associations, path_loss, configuration):
                 sta = sta.item()
 
             rssi = (MAX_TX_POWER - path_loss[ap, sta] - RSSI_MEAN) / RSSI_STD
-            G.add_edge(ap, sta, active=IsActive.NA, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
+            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.FALSE, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
 
     for link in configuration.links:
         G.edges[(link.ap, link.sta)]['mcs'] = McsValue(link.mcs)
