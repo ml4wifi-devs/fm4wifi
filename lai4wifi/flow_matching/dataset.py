@@ -3,7 +3,6 @@ os.environ['XLA_FLAGS'] = '--xla_gpu_enable_triton_gemm=false'
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['JAX_ENABLE_X64'] = 'True'
 
-import jax.random
 import jraph
 import orbax.checkpoint as ocp
 from omegaconf import OmegaConf
@@ -12,7 +11,6 @@ from tqdm import tqdm
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import load_dataset, save_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.training import load
 from lai4wifi.graphs.utils import make_batch
 
 

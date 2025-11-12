@@ -6,11 +6,13 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 import logging
 from copy import deepcopy
 from functools import partial
+from itertools import combinations
 
 import hydra
 import jax
 import jax.numpy as jnp
 import jraph
+import networkx as nx
 import numpy as np
 import optax
 import orbax.checkpoint as ocp
@@ -19,10 +21,62 @@ from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
+from lai4wifi.graphs.attributes import *
+from lai4wifi.graphs.dataset import RSSI_MEAN, RSSI_STD
+from lai4wifi.graphs.utils import nx_to_jraph
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.sim import connections_to_tx, get_initial_configurations, get_next_context, tx_to_action
+from lai4wifi.flow_matching.sim import associations_to_nx, connections_to_tx, get_initial_configurations, tx_to_action
 from lai4wifi.flow_matching.training import draw_t, get_network_desc, jax_repeat, noisy_example
 from lai4wifi.graphs.model import GnnAutoencoder
+
+
+def random_tx(key, scenario):
+    n_aps = len(scenario.associations)
+    n_nodes = n_aps + sum(len(stas) for stas in scenario.associations.values())
+    
+    tx = np.zeros((n_nodes, n_nodes), dtype=int)
+    tx_power = np.zeros(n_nodes, dtype=int)
+    mcs = np.zeros(n_nodes, dtype=int)
+
+    for ap, stas in scenario.associations.items():
+        key, ap_key, sta_key, power_key, mcs_key = jax.random.split(key, 5)
+
+        if jax.random.uniform(ap_key) < 1 / n_aps:
+            sta_idx = jax.random.choice(sta_key, jnp.asarray(stas)).item()
+            tx[ap, sta_idx] = 1
+            tx_power[ap] = jax.random.choice(power_key, len(TxPowerValue) - 1).item()
+            mcs[ap] = jax.random.choice(mcs_key, len(McsValue) - 1).item()
+
+    return tx, tx_power, mcs
+
+
+def tx_to_conf(scenario, tx, tx_power, mcs, internals, encode_fn):
+    G = nx.Graph()
+    G_base = associations_to_nx(scenario)
+    succ_prob = internals.frames_transmitted / jnp.maximum(internals.ampdu_size, 1)
+
+    for ap, stas in scenario.associations.items():
+        for sta in stas:
+            if not isinstance(sta, int):
+                sta = sta.item()
+
+            rssi = (internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD
+            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
+    
+    for ap, sta, power, rate, success in zip(*np.where(tx), tx_power, mcs, succ_prob):
+        ap, sta = ap.item(), sta.item()
+        G.edges[(ap, sta)]['mcs'] = McsValue(rate.item())
+        G.edges[(ap, sta)]['selected'] = IsSelected.TRUE
+        G.edges[(ap, sta)]['success'] = success.item()
+        G.edges[(ap, sta)]['tx_power'] = TxPowerValue(power.item())
+
+    for ap_1, ap_2 in combinations(scenario.associations.keys(), r=2):
+        rssi = (internals.signal_power[ap_1, ap_2] - RSSI_MEAN) / RSSI_STD
+        if (ap_1, ap_2) in G_base.edges:
+            G.add_edge(ap_1, ap_2, active=IsActive.NA, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.AP)
+
+    graph = nx_to_jraph(G)
+    return encode_fn(graph)
 
 
 def gen_sample(graph):
@@ -52,29 +106,42 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
         wandb.init(project='lai4wifi', name=cfg.name)
 
     key = jax.random.PRNGKey(cfg.train.seed)
-    key, conf_key = jax.random.split(key)
-    context, graph, ap_sta_idxs = get_initial_configurations(scenario, fm_cfg.train.n_timesteps + 1, conf_key, encode_fn)
+    key, conf_key, xs_key = jax.random.split(key, 3)
+    _, graph, ap_sta_idxs = get_initial_configurations(scenario, 0, conf_key, encode_fn)
+    all_xs, all_rewards = [], np.zeros(cfg.train.nft.n_examples)
+
+    for i in trange(cfg.train.nft.n_examples, desc='Generating dataset'):
+        xs_key, tx_key, sim_key = jax.random.split(xs_key, 3)
+        tx = random_tx(tx_key, scenario)
+        data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
+        all_xs.append(tx_to_conf(scenario, *tx, internals, encode_fn))
+        all_rewards[i] = data_rate
 
     for step in trange(cfg.train.n_steps, desc='Training steps'):
-        key, sample_key, fm_gen_key, fm_eval_key, scenario_key, train_key, eval_key = jax.random.split(key, 7)
-        xs = []
+        key, sample_key, train_key, eval_key = jax.random.split(key, 4)
+        xs, rewards = [], []
 
-        for _ in range(cfg.train.nft.n_samples):
-            sample_key, subkey = jax.random.split(sample_key)
-            selected_idx = jax.random.choice(subkey, ap_sta_idxs).item()
+        for i in range(cfg.train.nft.n_samples):
+            selected_key, context_key, sample_key = jax.random.split(sample_key, 3)
+            selected_idx = jax.random.choice(selected_key, ap_sta_idxs).item()
+            graphs_idxs = jax.random.choice(context_key, len(all_xs), (fm_cfg.train.n_timesteps + 1,)).tolist()
+            
+            graphs_ctx = [all_xs[i] for i in graphs_idxs]
             network_desc = get_network_desc(graph, selected_idx, encode_fn)
-            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context)
+            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *graphs_ctx)
+            
             xs.append(network_desc._replace(edges=all.edges, nodes=all.nodes, globals=all.globals))
+            rewards.append(all_rewards[graphs_idxs[-1]])
 
-        x_gen = jraph.batch([gen_sample(x) for x in xs])
-        z = jax.jit(fm.apply, static_argnames='method')(fm_params_old, x_gen, rngs=fm_gen_key, method='gen')
-        rewards = np.zeros(len(xs))
+        # DiffusionNFT paper:
+        # Z_c = global reward stddev
+        # rewards = rewards - np.mean(rewards)
+        # rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
 
-        for i, zt in enumerate(jraph.unbatch(decode_fn(z))):
-            scenario_key, tx_key, sim_key = jax.random.split(scenario_key, 3)
-            tx = connections_to_tx(scenario.associations, n_nodes, tx_key, zt)
-            data_rate, _ = scenario(sim_key, *tx, return_internals=False)
-            rewards[i] = data_rate
+        # Our scaling (T-Optimal as an upper bound):
+        Z_c = 315.4
+        rewards = np.array(rewards)
+        rewards = np.clip(rewards / Z_c, 0.0, 1.0)
 
         log_dict = {}
         log_dict['step'] = step
@@ -82,15 +149,6 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
         log_dict['reward/std'] = rewards.std().item()
         log_dict['reward/max'] = rewards.max().item()
         log_dict['reward/min'] = rewards.min().item()
-
-        # DiffusionNFT paper:
-        # Z_c = global reward stddev
-        # rewards = rewards - np.mean(rewards)
-        # rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
-
-        # Our scaling (assume max 3 concurrent tx):
-        Z_c = 4 * 143.0
-        rewards = np.clip(rewards / Z_c, 0.0, 1.0)
 
         @jax.jit
         def loss_fn(params, key, batch, rewards, params_old):
@@ -105,8 +163,9 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
             )
 
             # https://www.arxiv.org/abs/2509.16117
-            v_pred = fm.apply(params, cx, t, rngs=model_key)
-            v_pred_old = fm.apply(params_old, cx, t, rngs=model_key)
+            fm_key, fm_key_old = jax.random.split(model_key)
+            v_pred = fm.apply(params, cx, t, rngs=fm_key)
+            v_pred_old = fm.apply(params_old, cx, t, rngs=fm_key_old)
 
             beta = cfg.train.nft.beta
             v_plus = (1 - beta) * v_pred_old.edges + beta * v_pred.edges
@@ -145,27 +204,15 @@ def run_scenario(scenario, cfg, fm_cfg, fm, fm_params, encode_fn, decode_fn):
 
         fm_params_old = optax.incremental_update(fm_params, fm_params_old, step_size=max(1 - step / cfg.train.n_steps, 0.5))
 
-        # https://arxiv.org/abs/2412.08296
         x_eval = gen_sample(xs[0])
-        x_eval = jraph.batch([x_eval for _ in range(fm_cfg.train.n_eval_samples)])
-        z = jax.jit(fm.apply, static_argnames='method')(fm_params, x_eval, rngs=fm_eval_key, method='gen')
-        best, best_val = None, float('-inf')
+        fm_key, tx_key, sim_key = jax.random.split(eval_key, 3)
 
-        for zt in jraph.unbatch(decode_fn(z)):
-            eval_key, tx_key, sim_key = jax.random.split(eval_key, 3)
-            tx = connections_to_tx(scenario.associations, n_nodes, tx_key, zt)
-            data_rate, _ = scenario(sim_key, *tx, return_internals=False)
-
-            if data_rate > best_val:
-                best = tx
-                best_val = data_rate
-                graph = graph._replace(edges=zt.edges)
-
-        data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
-        context = get_next_context(graph, context, internals, encode_fn)
+        z = jax.jit(fm.apply, static_argnames='method')(fm_params, x_eval, rngs=fm_key, method='gen')
+        tx = connections_to_tx(scenario.associations, n_nodes, tx_key, decode_fn(z))
+        data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
 
         log_dict['sim/data_rate'] = data_rate.item()
-        log_dict['sim/actions'] = tx_to_action(scenario.associations, *best)
+        log_dict['sim/actions'] = tx_to_action(scenario.associations, internals, *tx)
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
             logging.info(log_dict)
