@@ -16,39 +16,11 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
+from lai4wifi.flow_matching.utils import get_network_desc
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import load_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
-
-
-def get_network_desc(target_conf, selected_idx, encode_fn):
-    edge_types = jnp.argmax(target_conf.edges.type, axis=-1)
-
-    active = jnp.where((edge_types == EdgeType.STA.value)[:, None], jnp.array(IsActive.TRUE)[None], jnp.array(IsActive.NA)[None])
-    mcs = jnp.zeros((edge_types.shape[0], len(McsValue)))
-    mcs = mcs.at[:].set(jnp.array(McsValue.NA))
-    rssi = jnp.zeros((edge_types.shape[0], 1))
-    selected = jnp.zeros((edge_types.shape[0], len(IsSelected)))
-    selected = selected.at[:].set(jnp.array(IsSelected.NA))
-    selected = selected.at[selected_idx].set(jnp.array(IsSelected.TRUE))
-    success = jnp.zeros((edge_types.shape[0], 1))
-    tx_power = jnp.zeros((edge_types.shape[0], len(TxPowerValue)))
-    tx_power = tx_power.at[:].set(jnp.array(TxPowerValue.NA))
-
-    edges = Connection(
-        active=active,
-        mcs=mcs,
-        rssi=rssi,
-        selected=selected,
-        success=success,
-        tx_power=tx_power,
-        type=target_conf.edges.type
-    )
-    edges = jax.tree.map(lambda x: x.astype(jnp.float64), edges)
-    desc_graph = target_conf._replace(edges=edges)
-
-    return encode_fn(desc_graph)
 
 
 def draw_configurations(scenario, n_timesteps, key, encode_fn):

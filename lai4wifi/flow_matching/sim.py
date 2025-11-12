@@ -5,147 +5,20 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 
 import json
 from argparse import ArgumentParser
-from collections import defaultdict
-from copy import deepcopy
 from functools import partial
-from itertools import combinations
 
 import jax
 import jax.numpy as jnp
 import jraph
-import numpy as np
-import networkx as nx
 import orbax.checkpoint as ocp
 from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.training import get_network_desc
+from lai4wifi.flow_matching.utils import connections_to_tx, tx_to_action, tx_to_conf, random_tx, get_initial_configurations, get_network_desc
 from lai4wifi.graphs.attributes import *
-from lai4wifi.graphs.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import nx_to_jraph
-
-
-def associations_to_nx(scenario):
-    distance = np.sqrt(np.sum((scenario.pos[:, None, :] - scenario.pos[None, ...]) ** 2, axis=-1))
-    path_loss = scenario.path_loss_fn(distance, scenario.walls)
-
-    G = nx.Graph()
-
-    for ap, stas in scenario.associations.items():
-        for sta in stas:
-            if not isinstance(sta, int):
-                sta = sta.item()
-
-            rssi = (MAX_TX_POWER - path_loss[ap, sta] - RSSI_MEAN) / RSSI_STD
-            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
-
-    for ap_1, ap_2 in combinations(scenario.associations.keys(), r=2):
-        rssi = (MAX_TX_POWER - path_loss[ap_1, ap_2] - RSSI_MEAN) / RSSI_STD
-        if rssi > RSSI_THR:
-            G.add_edge(ap_1, ap_2, active=IsActive.NA, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.AP)
-
-    return G
-
-
-def get_initial_configurations(scenario, n_timesteps, key, encode_fn):
-    G = associations_to_nx(scenario)
-    graph = nx_to_jraph(G)
-    context = [encode_fn(graph)] * n_timesteps
-
-    ap_sta_idxs = np.where(np.argmax(graph.edges.type, axis=-1) == EdgeType.STA.value)[0]
-    n_nodes = len(scenario.associations) + sum(len(stas) for stas in scenario.associations.values())
-
-    for _ in range(n_timesteps):
-        key, sel_key, tx_key, scenario_key = jax.random.split(key, 4)
-
-        selected_idx = jax.random.choice(sel_key, ap_sta_idxs).item()
-        sharing_ap = graph.senders[selected_idx].item()
-        selected_sta = graph.receivers[selected_idx].item()
-
-        G = associations_to_nx(scenario)
-        G.edges[sharing_ap, selected_sta]['mcs'] = McsValue.MCS_11
-        G.edges[sharing_ap, selected_sta]['selected'] = IsSelected.TRUE
-        G.edges[sharing_ap, selected_sta]['success'] = 1.0
-        G.edges[sharing_ap, selected_sta]['tx_power'] = TxPowerValue.LVL_1
-        graph = nx_to_jraph(G)
-
-        tx = connections_to_tx(scenario.associations, n_nodes, tx_key, graph)
-        _, _, internals = scenario(scenario_key, *tx, return_internals=True)
-
-        context = get_next_context(graph, context, internals, encode_fn)
-
-    return context, graph, ap_sta_idxs
-
-
-def connections_to_tx(associations, n_nodes, key, graph):
-    selected = defaultdict(list)
-    connections = graph.edges
-
-    for i in range(graph.n_edge[0]):
-        ap, sta = graph.senders[i].item(), graph.receivers[i].item()
-        if ap in associations and sta in associations[ap] and np.argmax(connections.selected[i]) == IsSelected.TRUE.value:
-            selected[ap].append(i)
-
-    tx_matrix = np.zeros((n_nodes, n_nodes), dtype=int)
-    tx_power = np.zeros(n_nodes, dtype=int)
-    mcs = np.zeros(n_nodes, dtype=int)
-    selected_for_tx = []
-
-    for ap, sta_indices in selected.items():
-        key, subkey = jax.random.split(key)
-        selected_sta_idx = jax.random.choice(subkey, len(sta_indices), replace=False).item()
-        selected_for_tx.append(sta_indices[selected_sta_idx])
-
-    for idx in selected_for_tx:
-        ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
-        tx_matrix[ap, sta] = 1
-        tx_power[ap] = np.argmax(connections.tx_power[idx, :-1])
-        mcs[ap] = np.argmax(connections.mcs[idx, :-1])
-
-    return tx_matrix, tx_power, mcs
-
-
-def tx_to_action(associations, internals, tx_matrix, tx_power, mcs):
-    return {
-        ap: (sta, internals.average_data_rate[ap].item() / 1e6, tx_power[ap].item(), mcs[ap].item()) 
-        for ap in associations.keys() for sta in associations[ap] if tx_matrix[ap, sta]
-    }
-
-
-def get_next_context(graph, context, internals, encode_fn):
-    connections = graph.edges
-    rssi = np.zeros_like(connections.rssi)
-    success = np.zeros_like(connections.success)
-
-    for i in range(graph.n_edge.item()):
-        ap, sta = graph.senders[i].item(), graph.receivers[i].item()
-        is_sta_ap = np.argmax(connections.type[i]) == EdgeType.STA.value
-        rssi_val = (internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD
-
-        if is_sta_ap or rssi_val > RSSI_THR:
-            rssi[i] = rssi_val
-
-        if is_sta_ap and np.argmax(connections.selected[i]) == IsSelected.TRUE.value:
-            success[i] = internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap])
-
-    edges = Connection(
-        active=connections.active,
-        mcs=connections.mcs,
-        rssi=rssi,
-        selected=connections.selected,
-        success=success,
-        tx_power=connections.tx_power,
-        type=connections.type
-    )
-    edges = jax.tree.map(lambda x: x.astype(jnp.float64), edges)
-    graph = graph._replace(edges=edges)
-    next_conf = encode_fn(graph)
-
-    context.append(next_conf)
-    return context[1:]
 
 
 def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, gen_fn, encode_fn, decode_fn):
@@ -160,16 +33,23 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
         runs.append([])
         actions.append([])
 
-        key, conf_key = jax.random.split(key)
-        context, graph, ap_sta_idxs = get_initial_configurations(scenario, n_timesteps, conf_key, encode_fn)
-        graph_template = deepcopy(graph)
+        key, conf_key, context_key = jax.random.split(key, 3)
+        _, graph, ap_sta_idxs = get_initial_configurations(scenario, n_timesteps, conf_key, encode_fn)
+        
+        context = []
 
-        for _ in range(n_steps):
+        for _ in range(n_timesteps + n_steps):
+            context_key, tx_key, sim_key = jax.random.split(context_key, 3)
+            tx = random_tx(tx_key, scenario)
+            data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
+            context.append(tx_to_conf(scenario, *tx, internals, encode_fn))
+
+        for step in range(n_steps):
             key, sel_key, fm_key, tx_key, scenario_key = jax.random.split(key, 5)
 
             selected_idx = jax.random.choice(sel_key, ap_sta_idxs).item()
-            network_desc = get_network_desc(graph_template, selected_idx, encode_fn)
-            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context)
+            network_desc = get_network_desc(graph, selected_idx, encode_fn)
+            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context[step:step + n_timesteps])
             x = network_desc._replace(
                 edges=all.edges,
                 nodes=all.nodes,
@@ -183,7 +63,7 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
 
             for zt in jraph.unbatch(decode_fn(z)):
                 tx_key, subkey = jax.random.split(tx_key)
-                tx = connections_to_tx(scenario.associations, n_nodes, subkey, graph)
+                tx = connections_to_tx(scenario.associations, n_nodes, subkey, zt)
 
                 scenario_key, subkey = jax.random.split(scenario_key)
                 data_rate, _ = scenario(subkey, *tx, return_internals=False)
@@ -191,12 +71,10 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
                 if data_rate > best_val:
                     best = tx
                     best_val = data_rate
-                    graph = graph._replace(edges=zt.edges)
 
             data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())
             actions[-1].append(tx_to_action(scenario.associations, internals, *best))
-            context = get_next_context(graph, context, internals, encode_fn)
 
     return runs, actions
 

@@ -67,7 +67,9 @@ class McsValue(JaxEnum):
     MCS_9 = 9
     MCS_10 = 10
     MCS_11 = 11
-    NA = 12
+    MCS_12 = 12
+    MCS_13 = 13
+    NA = 14
 
 
 class TxPowerValue(JaxEnum):
