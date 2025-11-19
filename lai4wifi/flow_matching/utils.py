@@ -8,7 +8,7 @@ import networkx as nx
 
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
-from lai4wifi.graphs.utils import nx_to_jraph
+from lai4wifi.graphs.utils import clear_graph, nx_to_jraph
 
 
 def associations_to_nx(scenario):
@@ -100,31 +100,29 @@ def tx_to_action(associations, internals, tx_matrix, tx_power, mcs):
 
 def get_next_context(graph, context, internals, encode_fn):
     connections = graph.edges
-    rssi = np.zeros_like(connections.rssi)
-    success = np.zeros_like(connections.success)
+    rssi = jnp.zeros(connections.rssi.shape, dtype=jnp.float64)
+    success = jnp.zeros(connections.success.shape, dtype=jnp.float64)
 
     for i in range(graph.n_edge.item()):
         ap, sta = graph.senders[i].item(), graph.receivers[i].item()
-        is_sta_ap = np.argmax(connections.type[i]) == EdgeType.STA.value
-        rssi_val = (internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD
+        is_sta_ap = jnp.argmax(connections.type[i]) == EdgeType.STA.value
+        rssi = rssi.at[i].set((internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD)
 
-        if is_sta_ap or rssi_val > RSSI_THR:
-            rssi[i] = rssi_val
-
-        if is_sta_ap and np.argmax(connections.selected[i]) == IsSelected.TRUE.value:
-            success[i] = internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap])
+        if is_sta_ap and jnp.argmax(connections.selected[i]) == IsSelected.TRUE.value:
+            success = success.at[i].set(internals.frames_transmitted[ap] / max(1, internals.ampdu_size[ap]))
 
     edges = Connection(
-        active=connections.active,
-        mcs=connections.mcs,
+        active=jax.nn.one_hot(jnp.argmax(connections.active, axis=-1), len(IsActive), dtype=jnp.float64),
+        mcs=jax.nn.one_hot(jnp.argmax(connections.mcs, axis=-1), len(McsValue), dtype=jnp.float64),
         rssi=rssi,
-        selected=connections.selected,
+        selected=jax.nn.one_hot(jnp.argmax(connections.selected, axis=-1), len(IsSelected), dtype=jnp.float64),
         success=success,
-        tx_power=connections.tx_power,
-        type=connections.type
+        tx_power=jax.nn.one_hot(jnp.argmax(connections.tx_power, axis=-1), len(TxPowerValue), dtype=jnp.float64),
+        type=jax.nn.one_hot(jnp.argmax(connections.type, axis=-1), len(EdgeType), dtype=jnp.float64)
     )
-    edges = jax.tree.map(lambda x: x.astype(jnp.float64), edges)
+
     graph = graph._replace(edges=edges)
+    graph = clear_graph(graph)
     next_conf = encode_fn(graph)
 
     context.append(next_conf)
@@ -156,6 +154,7 @@ def get_network_desc(target_conf, selected_idx, encode_fn):
     )
     edges = jax.tree.map(lambda x: x.astype(jnp.float64), edges)
     desc_graph = target_conf._replace(edges=edges)
+    desc_graph = clear_graph(desc_graph)
 
     return encode_fn(desc_graph)
 
