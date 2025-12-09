@@ -1,11 +1,10 @@
 from itertools import combinations
 
-import cloudpickle
 import jax.numpy as jnp
-import lz4.frame
 import networkx as nx
 from tqdm import tqdm
 
+from lai4wifi.dataset.utils import load_dataset, save_dataset
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.utils import nx_to_jraph
 
@@ -15,16 +14,6 @@ CCA_THRESHOLD = -82.0
 RSSI_MEAN = -60.0
 RSSI_STD = 20.0
 RSSI_THR = (CCA_THRESHOLD - RSSI_MEAN) / RSSI_STD
-
-
-def save_dataset(dataset, path):
-    with lz4.frame.open(path, 'wb') as f:
-        f.write(cloudpickle.dumps(dataset))
-
-
-def load_dataset(path):
-    with lz4.frame.open(path, 'rb') as f:
-        return cloudpickle.loads(f.read())
 
 
 def dataset_conf_to_nx(associations, path_loss, configuration):
