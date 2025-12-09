@@ -5,9 +5,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import networkx as nx
+from mapc_sim.constants import DEFAULT_TX_POWER
 
 from lai4wifi.graphs.attributes import *
-from lai4wifi.graphs.dataset import MAX_TX_POWER, RSSI_MEAN, RSSI_STD, RSSI_THR
+from lai4wifi.graphs.dataset import RSSI_MEAN, RSSI_STD, RSSI_THR
 from lai4wifi.graphs.utils import clear_graph, nx_to_jraph
 
 
@@ -22,11 +23,11 @@ def associations_to_nx(scenario):
             if not isinstance(sta, int):
                 sta = sta.item()
 
-            rssi = (MAX_TX_POWER - path_loss[ap, sta] - RSSI_MEAN) / RSSI_STD
+            rssi = (DEFAULT_TX_POWER - path_loss[ap, sta] - RSSI_MEAN) / RSSI_STD
             G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
 
     for ap_1, ap_2 in combinations(scenario.associations.keys(), r=2):
-        rssi = (MAX_TX_POWER - path_loss[ap_1, ap_2] - RSSI_MEAN) / RSSI_STD
+        rssi = (DEFAULT_TX_POWER - path_loss[ap_1, ap_2] - RSSI_MEAN) / RSSI_STD
         if rssi > RSSI_THR:
             G.add_edge(ap_1, ap_2, active=IsActive.NA, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.AP)
 

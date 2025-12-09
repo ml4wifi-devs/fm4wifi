@@ -1,24 +1,8 @@
-from dataclasses import dataclass
-from random import choice
-from typing import Optional
-
 import jax
 import jax.numpy as jnp
 import jraph
-import networkx as nx
 
-from lai4wifi.graphs.attributes import Connection, IsSelected
-
-
-@dataclass
-class Graph:
-    graph: jraph.GraphsTuple
-    embedding: Optional[jax.Array]
-    pos: jax.Array
-    walls: jax.Array
-    selected_idx: int
-    line_senders: jax.Array
-    line_receivers: jax.Array
+from lai4wifi.graphs.attributes import Connection
 
 
 def nearest_power_of_two(n):
@@ -44,12 +28,12 @@ def unbatch(batched_graph):
     return jraph.unbatch(graphs)
 
 
-def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
+def nx_to_jraph(G):
     edges, senders, receivers = zip(*[[jax.tree.map(jnp.atleast_1d, Connection(**data)), u, v] for u, v, data in G.edges(data=True)])
     senders, receivers = senders + receivers, receivers + senders
     edges += edges
 
-    graph = jraph.GraphsTuple(
+    return jraph.GraphsTuple(
         nodes=jnp.empty((len(G.nodes), 0), dtype=jnp.float64),
         edges=jax.tree.map(lambda *args: jnp.stack(args).astype(jnp.float64), *edges),
         receivers=jnp.asarray(receivers),
@@ -59,39 +43,6 @@ def nx_to_jraph(G, return_misc=False, pos=None, walls=None):
         n_edge=jnp.asarray([len(edges)])
     )
 
-    if return_misc:
-        Gl = nx.line_graph(G)
-        line_senders, line_receivers = jnp.where(nx.to_numpy_array(Gl))
-        selected_idx = choice([i for i, (_, _, d) in enumerate(G.edges(data=True)) if d['selected'] == IsSelected.TRUE])
-        return Graph(graph, None, pos, walls, selected_idx, line_senders, line_receivers)
-
-    return graph
-
 
 def clear_graph(x):
     return x._replace(nodes=jnp.empty((x.nodes.shape[0], 0), dtype=x.nodes.dtype), globals=None)
-
-
-def eig_laplacian(senders, receivers, n_nodes, k):
-    adj = jnp.zeros((n_nodes, n_nodes), dtype=jnp.float64)
-    adj = adj.at[(senders, receivers)].set(1)
-    D = jnp.diag(adj.sum(axis=1))
-    L = D - adj
-
-    evals, evects = jnp.linalg.eigh(L)
-
-    idx = jnp.argsort(evals)[:k]
-    evals, evects = evals[idx].real, evects[:, idx].real
-    evals = evals.clip(min=0)
-
-    norm = jnp.linalg.norm(evects, axis=0)
-    norm = norm.clip(min=1e-12)
-    evects /= norm
-
-    if (N := len(evals)) < k:
-        pad_width = [(0, 0)] * (evects.ndim - 1) + [(0, k - N)]
-        evects = jnp.pad(evects, pad_width, mode='constant', constant_values=jnp.nan)
-        pad_width = [(0, 0)] * (evals.ndim - 1) + [(0, k - N)]
-        evals = jnp.pad(evals, pad_width, mode='constant', constant_values=jnp.nan)
-
-    return evals, evects
