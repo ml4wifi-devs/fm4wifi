@@ -3,37 +3,29 @@ os.environ['XLA_FLAGS'] = '--xla_gpu_enable_triton_gemm=false'
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['JAX_ENABLE_X64'] = 'True'
 
-import jraph
+import jax
 import orbax.checkpoint as ocp
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
-from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import load_dataset, save_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch
+from lai4wifi.graphs.utils import make_batch, unbatch
 
 
 def graph_to_embeddings_dataset(dataset, model, params):
-    for configurations in tqdm(dataset):
-        if len(configurations) == 0:
-            continue
-
-        batch = make_batch(list(map(lambda c: c.graph, configurations)))
-        batch = jax.jit(model.apply, static_argnames='method')(params, batch, method='encode')
-        batch = jraph.unpad_with_graphs(batch)
-        batch = jraph.unbatch(batch)
-
-        for i, embeddings in enumerate(batch):
-            configurations[i].embedding = embeddings
-
-        yield configurations
+    for dataset_item in tqdm(dataset):
+        batch = make_batch(dataset_item.configurations)
+        embeddings = jax.jit(model.apply, static_argnames='method')(params, batch, method='encode')
+        dataset_item.configurations = unbatch(embeddings)
+    
+    return dataset
 
 
 def convert_dataset(dataset_path, save_path, model, params):
     dataset = load_dataset(dataset_path)
-    graph_dataset = list(graph_to_embeddings_dataset(dataset, model, params))
-    save_dataset(graph_dataset, save_path)
+    dataset = graph_to_embeddings_dataset(dataset, model, params)
+    save_dataset(dataset, save_path)
 
 
 def load_model(ckpt_path):
@@ -49,11 +41,11 @@ def load_model(ckpt_path):
 
 if __name__ == '__main__':
     model, params = load_model('../graphs/runs/gnn_ae_base')
-    convert_dataset('../graphs/datasets/f_opt_dataset_graph.pkl.lz4', 'datasets/f_opt_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/f_opt_val_dataset_graph.pkl.lz4', 'datasets/f_opt_val_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/t_opt_dataset_graph.pkl.lz4', 'datasets/t_opt_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/t_opt_val_dataset_graph.pkl.lz4', 'datasets/t_opt_val_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/h_mab_dataset_graph.pkl.lz4', 'datasets/h_mab_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/h_mab_val_dataset_graph.pkl.lz4', 'datasets/h_mab_val_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/random_dataset_graph.pkl.lz4', 'datasets/random_dataset_graph.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/random_val_dataset_graph.pkl.lz4', 'datasets/random_val_dataset_graph.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/f_opt_dataset.pkl.lz4', 'datasets/f_opt_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/f_opt_val_dataset.pkl.lz4', 'datasets/f_opt_val_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/t_opt_dataset.pkl.lz4', 'datasets/t_opt_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/t_opt_val_dataset.pkl.lz4', 'datasets/t_opt_val_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/h_mab_dataset.pkl.lz4', 'datasets/h_mab_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/h_mab_val_dataset.pkl.lz4', 'datasets/h_mab_val_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/random_dataset.pkl.lz4', 'datasets/random_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/random_val_dataset.pkl.lz4', 'datasets/random_val_dataset.pkl.lz4', model, params)

@@ -74,7 +74,7 @@ class Configuration:
 @dataclass
 class DatasetItem:
     scenario: Scenario
-    configurations: list[Configuration]
+    configurations: list
     
 
 N_TX_POWER_LEVELS = 4

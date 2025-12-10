@@ -5,7 +5,6 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
 from glob import glob
-from itertools import chain
 
 import hydra
 import jax
@@ -16,7 +15,7 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.graphs.dataset import load_dataset
+from lai4wifi.dataset.utils import load_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 
@@ -29,8 +28,7 @@ def load(batch_size, key, val_dataset=False):
             continue
 
         dataset = load_dataset(file)
-        dataset = chain.from_iterable(dataset)
-        dataset = list(map(lambda g: g.graph, dataset))
+        dataset = sum((d.configurations for d in dataset), start=[])
         all_datasets += dataset
 
     while True:
