@@ -5,6 +5,7 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
 from functools import partial
+from glob import glob
 
 import hydra
 import jax
@@ -16,30 +17,28 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.utils import get_network_desc
-from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import load_dataset
-from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 
 
-def draw_configurations(scenario, n_timesteps, key, encode_fn):
-    *context_idxs, target_idx = jax.random.choice(key, len(scenario), (n_timesteps + 1,))
+def draw_configurations(dataset_item, n_timesteps, key):
+    *context_idxs, target_idx = jax.random.choice(key, len(dataset_item.configurations), (n_timesteps + 1,))
 
-    context = [scenario[i].embedding for i in context_idxs]
-    target_conf = scenario[target_idx].embedding
-    network_desc = get_network_desc(scenario[target_idx].graph, scenario[target_idx].selected_idx, encode_fn)
+    context = [dataset_item.configurations[i] for i in context_idxs]
+    target_conf = dataset_item.configurations[target_idx]
 
-    all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), network_desc, *context, target_conf)
-    return network_desc._replace(
+    all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context, target_conf)
+    return target_conf._replace(
         edges=all_desc.edges,
         nodes=all_desc.nodes,
         globals=all_desc.globals
     )
 
 
-def load(dataset_paths, batch_size, n_timesteps, key, encode_fn):
-    dataset = sum((load_dataset(path) for path in dataset_paths), [])
+def load(dataset_path, batch_size, n_timesteps, key, val):
+    dataset_paths = glob(f'{dataset_path}/*.pkl.lz4')
+    dataset_paths = filter(lambda p: ('val' in p) == val, dataset_paths)
+    dataset = sum((load_dataset(path) for path in dataset_paths), start=[])
 
     while True:
         edges = 0
@@ -48,10 +47,14 @@ def load(dataset_paths, batch_size, n_timesteps, key, encode_fn):
         while True:
             key, idx_key, conf_key = jax.random.split(key, 3)
             idx = jax.random.choice(idx_key, len(dataset))
-            graph_size = dataset[idx][0].embedding.edges.shape[0]
+
+            if len(dataset[idx].configurations) < n_timesteps + 1:
+                continue
+            
+            graph_size = dataset[idx].configurations[0].edges.shape[0]
 
             if edges + graph_size < batch_size:
-                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, encode_fn))
+                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key))
                 edges += graph_size
             elif edges == 0:
                 continue
@@ -113,18 +116,11 @@ def main(cfg):
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
-    gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
-        gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
-
-    gnn = GnnAutoencoder(**gnn_cfg.model)
-    encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
-
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
 
-    data = load(cfg.dataset, cfg.train.batch_size, cfg.train.n_timesteps, data_key, encode_fn)
-    val_data = iter(load(cfg.val_dataset, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, encode_fn))
+    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, data_key, val=False)
+    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, val=True))
     sample = next(iter(data))
     sample = (sample, jnp.zeros((sample.edges.shape[0], 1)))
 

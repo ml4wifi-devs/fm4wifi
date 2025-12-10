@@ -9,6 +9,5 @@ val:
   freq: 5
 batch_size: 64
 n_steps: 1000
-n_timesteps: 2
-n_eval_samples: 4
+n_timesteps: 3
 seed: 42

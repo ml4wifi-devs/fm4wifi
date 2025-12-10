@@ -15,6 +15,9 @@ from lai4wifi.graphs.utils import make_batch, unbatch
 
 def graph_to_embeddings_dataset(dataset, model, params):
     for dataset_item in tqdm(dataset):
+        if len(dataset_item.configurations) == 0:
+            continue
+
         batch = make_batch(dataset_item.configurations)
         embeddings = jax.jit(model.apply, static_argnames='method')(params, batch, method='encode')
         dataset_item.configurations = unbatch(embeddings)
