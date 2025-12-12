@@ -31,8 +31,8 @@ def configuration_to_tx(scenario, configuration):
     for link in configuration.links:
         ap, sta = link.ap, link.sta
         tx = tx.at[ap, sta].set(1)
-        tx_power = tx_power.at[sta].set(link.tx_power)
-        mcs = mcs.at[sta].set(link.mcs)
+        tx_power = tx_power.at[ap].set(link.tx_power)
+        mcs = mcs.at[ap].set(link.mcs)
     
     return tx, tx_power, mcs
 
