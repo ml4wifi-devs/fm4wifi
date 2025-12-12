@@ -10,6 +10,7 @@ import hydra
 import jax
 import jax.numpy as jnp
 import jraph
+import numpy as np
 import optax
 import orbax.checkpoint as ocp
 import wandb
@@ -166,7 +167,7 @@ def main(cfg):
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
             val_loss, val_kl_loss = 0.0, 0.0
-            val_other_losses, val_na_metrics, val_pred_metrics = jnp.zeros(7), jnp.zeros(7), jnp.zeros(7)
+            val_other_losses, val_na_metrics, val_pred_metrics = np.zeros(7), np.zeros(7), np.zeros(7)
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)

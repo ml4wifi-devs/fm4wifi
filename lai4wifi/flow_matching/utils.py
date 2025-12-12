@@ -142,7 +142,7 @@ def random_tx(key, scenario):
         key, ap_key, sta_key, power_key, mcs_key = jax.random.split(key, 5)
 
         if jax.random.uniform(ap_key) < 1 / n_aps:
-            sta_idx = jax.random.choice(sta_key, jnp.asarray(stas)).item()
+            sta_idx = jax.random.choice(sta_key, np.asarray(stas)).item()
             tx[ap, sta_idx] = 1
             tx_power[ap] = jax.random.choice(power_key, len(TxPowerValue) - 1).item()
             mcs[ap] = jax.random.choice(mcs_key, len(McsValue) - 1).item()
@@ -153,7 +153,7 @@ def random_tx(key, scenario):
 def tx_to_conf(scenario, tx, tx_power, mcs, internals, encode_fn):
     G = nx.Graph()
     G_base = associations_to_nx(scenario)
-    succ_prob = internals.frames_transmitted / jnp.maximum(internals.ampdu_size, 1)
+    succ_prob = internals.frames_transmitted / np.maximum(internals.ampdu_size, 1)
 
     for ap, stas in scenario.associations.items():
         for sta in stas:

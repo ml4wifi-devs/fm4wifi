@@ -15,7 +15,7 @@ def make_batch(graph_list, pad=True):
     batch = jraph.batch(graph_list)
 
     if pad:
-        pad_n_node = nearest_power_of_two(jnp.sum(batch.n_node) + 1)
+        pad_n_node = nearest_power_of_two(batch.n_node.sum() + 1)
         pad_n_edge = nearest_power_of_two(batch.senders.shape[0])
         pad_n_graph = batch.n_node.shape[0] + 1
         batch = jraph.pad_with_graphs(batch, pad_n_node, pad_n_edge, pad_n_graph)

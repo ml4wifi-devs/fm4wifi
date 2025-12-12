@@ -9,7 +9,7 @@ from glob import glob
 
 import hydra
 import jax
-import jax.numpy as jnp
+import numpy as np
 import jraph
 import optax
 import orbax.checkpoint as ocp
@@ -56,7 +56,7 @@ def load(dataset_path, batch_size, encode_fn, key, val):
             graph_batch.append(graph)
             rate_batch.append(data_rate)
 
-        yield make_batch(graph_batch), jnp.asarray(rate_batch + [0.0])
+        yield make_batch(graph_batch), np.asarray(rate_batch + [0.0])
 
 
 @hydra.main(config_path='configs', config_name='surrogate', version_base=None)
