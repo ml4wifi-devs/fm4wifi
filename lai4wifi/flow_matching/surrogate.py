@@ -23,8 +23,8 @@ from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import clear_graph, make_batch
 
 
-RATE_MEAN = 200
-RATE_STD = 200
+RATE_MEAN = 207.1
+RATE_STD = 158.8
 
 
 def load(dataset_path, batch_size, encode_fn, key, val):
