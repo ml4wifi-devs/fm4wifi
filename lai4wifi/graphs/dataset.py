@@ -1,10 +1,11 @@
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'False'
 os.environ['JAX_ENABLE_X64'] = 'True'
+os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 
 from itertools import combinations
 
-import jax.numpy as jnp
+import numpy as np
 import networkx as nx
 from mapc_sim.constants import DEFAULT_TX_POWER
 from tqdm import tqdm
@@ -24,15 +25,15 @@ def configuration_to_tx(scenario, configuration):
     associations = scenario.associations
     n_nodes = len(associations) + sum(len(stas) for stas in associations.values())
     
-    tx = jnp.zeros((n_nodes, n_nodes), dtype=int)
-    tx_power = jnp.zeros(n_nodes, dtype=int)
-    mcs = jnp.zeros(n_nodes, dtype=int)
+    tx = np.zeros((n_nodes, n_nodes), dtype=int)
+    tx_power = np.zeros(n_nodes, dtype=int)
+    mcs = np.zeros(n_nodes, dtype=int)
 
     for link in configuration.links:
         ap, sta = link.ap, link.sta
-        tx = tx.at[ap, sta].set(1)
-        tx_power = tx_power.at[ap].set(link.tx_power)
-        mcs = mcs.at[ap].set(link.mcs)
+        tx[ap, sta] = 1
+        tx_power[ap] = link.tx_power
+        mcs[ap] = link.mcs
     
     return tx, tx_power, mcs
 
@@ -50,7 +51,7 @@ def dataset_conf_to_nx(scenario, path_loss, configuration):
 
     tx = configuration_to_tx(scenario, configuration)
     _, _, internals = scenario(jax.random.key(0), *tx, return_internals=True)
-    succ_prob = internals.frames_transmitted / jnp.maximum(internals.ampdu_size, 1)
+    succ_prob = internals.frames_transmitted / np.maximum(internals.ampdu_size, 1)
 
     for link in configuration.links:
         G.edges[(link.ap, link.sta)]['mcs'] = McsValue(link.mcs)
@@ -75,7 +76,7 @@ def dataset_item_to_nx(dataset_item, path_loss):
 def scenario_to_graph_dataset(dataset):
     for dataset_item in tqdm(dataset):
         pos, walls = dataset_item.scenario.pos, dataset_item.scenario.walls
-        distance = jnp.sqrt(jnp.sum((pos[:, None, :] - pos[None, ...]) ** 2, axis=-1))
+        distance = np.sqrt(np.sum((pos[:, None, :] - pos[None, ...]) ** 2, axis=-1))
         path_loss = dataset_item.scenario.path_loss_fn(distance, walls)
         dataset_item.configurations = list(dataset_item_to_nx(dataset_item, path_loss))
 
