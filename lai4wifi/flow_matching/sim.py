@@ -21,12 +21,12 @@ from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.model import GnnAutoencoder
 
 
-def eval_with_sim(scenario, z, key, n_nodes, decode_fn):
+def eval_with_sim(scenario, z, key, decode_fn):
     best, best_val = None, float('-inf')
 
     for zt in jraph.unbatch(decode_fn(z)):
         key, tx_key, scenario_key = jax.random.split(key, 3)
-        tx = connections_to_tx(scenario.associations, n_nodes, tx_key, zt)
+        tx = connections_to_tx(scenario.associations, tx_key, zt)
         data_rate, _ = scenario(scenario_key, *tx, return_internals=False)
 
         if data_rate > best_val:
@@ -36,12 +36,12 @@ def eval_with_sim(scenario, z, key, n_nodes, decode_fn):
     return best
 
 
-def eval_with_surrogate(scenario, z, key, n_nodes, surrogate_fn):
+def eval_with_surrogate(scenario, z, key, surrogate_fn):
     model_key, tx_key = jax.random.split(key)
     pred = surrogate_fn(z, rngs=model_key)
     best_idx = jnp.argmax(pred)
     best_zt = jraph.unbatch(z)[best_idx]
-    best = connections_to_tx(scenario.associations, n_nodes, tx_key, best_zt)
+    best = connections_to_tx(scenario.associations, tx_key, best_zt)
     return best
 
 
@@ -49,8 +49,6 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
     key = jax.random.PRNGKey(seed)
     runs = []
     actions = []
-
-    n_nodes = len(scenario.associations) + sum(len(stas) for stas in scenario.associations.values())
 
     for _ in range(n_reps):
         scenario.reset()
@@ -64,10 +62,10 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
             data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
             context.append(tx_to_conf(scenario, *tx, internals, encode_fn))
 
-        for _ in range(n_steps):
+        for step in range(n_steps):
             key, fm_key, eval_key, scenario_key = jax.random.split(key, 4)
 
-            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context)
+            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context[step:step + n_timesteps])
             x = context[0]._replace(
                 edges=all.edges,
                 nodes=all.nodes,
@@ -79,9 +77,9 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
             z = gen_fn(x_eval, rngs=fm_key)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, z, eval_key, n_nodes, surrogate_fn)
+                best = eval_with_surrogate(scenario, z, eval_key, surrogate_fn)
             else:
-                best = eval_with_sim(scenario, z, eval_key, n_nodes, decode_fn)
+                best = eval_with_sim(scenario, z, eval_key, decode_fn)
 
             data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())

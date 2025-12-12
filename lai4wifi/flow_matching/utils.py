@@ -56,7 +56,7 @@ def get_initial_configurations(scenario, n_timesteps, key, encode_fn):
         G.edges[sharing_ap, selected_sta]['tx_power'] = TxPowerValue.LVL_1
         graph = nx_to_jraph(G)
 
-        tx = connections_to_tx(scenario.associations, n_nodes, tx_key, graph)
+        tx = connections_to_tx(scenario.associations, tx_key, graph)
         _, _, internals = scenario(scenario_key, *tx, return_internals=True)
 
         context = get_next_context(graph, context, internals, encode_fn)
@@ -64,7 +64,8 @@ def get_initial_configurations(scenario, n_timesteps, key, encode_fn):
     return context, graph, ap_sta_idxs
 
 
-def connections_to_tx(associations, n_nodes, key, graph):
+def connections_to_tx(associations, key, graph):
+    n_nodes = len(associations) + sum(len(stas) for stas in associations.values())
     selected = defaultdict(list)
     connections = graph.edges
 
@@ -142,8 +143,9 @@ def random_tx(key, scenario):
         key, ap_key, sta_key, power_key, mcs_key = jax.random.split(key, 5)
 
         if jax.random.uniform(ap_key) < 1 / n_aps:
-            sta_idx = jax.random.choice(sta_key, np.asarray(stas)).item()
-            tx[ap, sta_idx] = 1
+            sta_idx = jax.random.choice(sta_key, len(stas)).item()
+            sta = stas[sta_idx]
+            tx[ap, sta] = 1
             tx_power[ap] = jax.random.choice(power_key, len(TxPowerValue) - 1).item()
             mcs[ap] = jax.random.choice(mcs_key, len(McsValue) - 1).item()
 
@@ -163,12 +165,12 @@ def tx_to_conf(scenario, tx, tx_power, mcs, internals, encode_fn):
             rssi = (internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD
             G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
     
-    for ap, sta, power, rate, success in zip(*np.where(tx), tx_power, mcs, succ_prob):
+    for ap, sta in zip(*np.where(tx)):
         ap, sta = ap.item(), sta.item()
-        G.edges[(ap, sta)]['mcs'] = McsValue(rate.item())
+        G.edges[(ap, sta)]['mcs'] = McsValue(mcs[ap].item())
         G.edges[(ap, sta)]['selected'] = IsSelected.TRUE
-        G.edges[(ap, sta)]['success'] = success.item()
-        G.edges[(ap, sta)]['tx_power'] = TxPowerValue(power.item())
+        G.edges[(ap, sta)]['success'] = succ_prob[ap].item()
+        G.edges[(ap, sta)]['tx_power'] = TxPowerValue(tx_power[ap].item())
 
     for ap_1, ap_2 in combinations(scenario.associations.keys(), r=2):
         rssi = (internals.signal_power[ap_1, ap_2] - RSSI_MEAN) / RSSI_STD

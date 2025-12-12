@@ -26,8 +26,6 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, 
     runs = []
     actions = []
 
-    n_nodes = len(scenario.associations) + sum(len(stas) for stas in scenario.associations.values())
-
     for _ in range(n_reps):
         scenario.reset()
         runs.append([])
@@ -48,9 +46,9 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, 
             z = encode_fn(x_eval, rngs=gnn_key)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, z, eval_key, n_nodes, surrogate_fn)
+                best = eval_with_surrogate(scenario, z, eval_key, surrogate_fn)
             else:
-                best = eval_with_sim(scenario, z, eval_key, n_nodes, decode_fn)
+                best = eval_with_sim(scenario, z, eval_key, decode_fn)
 
             data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())
