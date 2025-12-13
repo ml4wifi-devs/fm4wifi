@@ -4,7 +4,6 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
-from functools import partial
 from glob import glob
 
 import hydra
@@ -17,20 +16,24 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import SurrogateModel
-from lai4wifi.flow_matching.utils import tx_to_conf
 from lai4wifi.graphs.dataset import configuration_to_tx, load_dataset
-from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import clear_graph, make_batch
+from lai4wifi.graphs.utils import make_batch
 
 
 RATE_MEAN = 207.1
 RATE_STD = 158.8
 
 
-def load(dataset_path, batch_size, encode_fn, key, val):
+def load(dataset_path, graph_dataset_path, batch_size, key, val):
     dataset_paths = glob(f'{dataset_path}/*.pkl.lz4')
     dataset_paths = filter(lambda p: ('val' in p) == val, dataset_paths)
+    dataset_paths = sorted(dataset_paths)
     dataset = sum((load_dataset(path) for path in dataset_paths), start=[])
+
+    graph_paths = glob(f'{graph_dataset_path}/*.pkl.lz4')
+    graph_paths = filter(lambda p: ('val' in p) == val, graph_paths)
+    graph_paths = sorted(graph_paths)
+    graphs = sum((load_dataset(path) for path in graph_paths), start=[])
 
     while True:
         graph_batch, rate_batch = [], []
@@ -47,11 +50,9 @@ def load(dataset_path, batch_size, encode_fn, key, val):
             configuration = dataset_item.configurations[config_idx]
 
             tx = configuration_to_tx(dataset_item.scenario, configuration)
-            data_rate, _, internals = dataset_item.scenario(scenario_key, *tx, return_internals=True)
+            data_rate, _ = dataset_item.scenario(scenario_key, *tx)
             data_rate = (data_rate - RATE_MEAN) / RATE_STD
-
-            graph = tx_to_conf(dataset_item.scenario, *tx, internals, encode_fn)
-            graph = clear_graph(graph)
+            graph = graphs[dataset_idx].configurations[config_idx]
             
             graph_batch.append(graph)
             rate_batch.append(data_rate)
@@ -80,15 +81,8 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
 
-    gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
-        gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
-
-    gnn = GnnAutoencoder(**gnn_cfg.model)
-    encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
-
-    data = load(cfg.dataset_path, cfg.train.batch_size, encode_fn, data_key, val=False)
-    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, encode_fn, val_data_key, val=True))
+    data = load(cfg.dataset_path, cfg.graph_dataset_path, cfg.train.batch_size, data_key, val=False)
+    val_data = iter(load(cfg.dataset_path, cfg.graph_dataset_path, cfg.train.batch_size, val_data_key, val=True))
     sample = next(iter(data))[0]
 
     model = SurrogateModel(**cfg.model)

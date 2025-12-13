@@ -181,6 +181,7 @@ class SurrogateModel(nn.Module):
             make_transformer,
             self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, training=training
         )
+        x = clear_graph(x)
 
         for _ in range(self.gnn_layers):
             x = jraph.GraphNetwork(

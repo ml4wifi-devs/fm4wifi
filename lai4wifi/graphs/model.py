@@ -133,4 +133,5 @@ class GnnAutoencoder(nn.Module):
         return z_mean
 
     def decode(self, z):
+        z = clear_graph(z)
         return self.decoder(z)

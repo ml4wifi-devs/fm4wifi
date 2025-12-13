@@ -18,7 +18,6 @@ from lai4wifi.flow_matching.model import SurrogateModel
 from lai4wifi.flow_matching.sim import eval_with_sim, eval_with_surrogate
 from lai4wifi.flow_matching.utils import random_tx, tx_to_action, tx_to_conf
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import clear_graph
 
 
 def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, encode_fn, decode_fn):
@@ -39,8 +38,7 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, 
                 rand_key, tx_key, sim_key = jax.random.split(rand_key, 3)
                 tx = random_tx(tx_key, scenario)
                 _, _, internals = scenario(sim_key, *tx, return_internals=True)
-                graph = clear_graph(tx_to_conf(scenario, *tx, internals, encode_fn))
-                graphs.append(graph)
+                graphs.append(tx_to_conf(scenario, *tx, internals, encode_fn))
 
             x_eval = jraph.batch(graphs)
             z = encode_fn(x_eval, rngs=gnn_key)

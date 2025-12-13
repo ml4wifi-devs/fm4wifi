@@ -17,7 +17,6 @@ from tqdm import tqdm
 
 from lai4wifi.flow_matching.model import FlowMatching, SurrogateModel
 from lai4wifi.flow_matching.utils import connections_to_tx, tx_to_action, tx_to_conf, random_tx
-from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.model import GnnAutoencoder
 
 

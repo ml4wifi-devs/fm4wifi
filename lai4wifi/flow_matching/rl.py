@@ -24,7 +24,7 @@ from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example
 from lai4wifi.flow_matching.utils import connections_to_tx, gen_sample, random_tx, tx_to_action, tx_to_conf
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import clear_graph, make_batch
+from lai4wifi.graphs.utils import make_batch
 
 
 TRAIN_SCENARIOS = [
@@ -110,8 +110,8 @@ def main(cfg):
         return loss
 
     @jax.jit
-    def step_fn(params, opt_state, key, *batch):
-        loss, grads = jax.value_and_grad(loss_fn)(params, key, *batch)
+    def step_fn(params, opt_state, key, batch, rewards, params_old):
+        loss, grads = jax.value_and_grad(loss_fn)(params, key, batch, rewards, params_old)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         grad_norm = optax.global_norm(grads)
@@ -164,7 +164,7 @@ def main(cfg):
             gen_key, tx_key, sim_key = jax.random.split(gen_key, 3)
             tx = random_tx(tx_key, scenario)
             data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
-            context.append(clear_graph(tx_to_conf(scenario, *tx, internals, encode_fn)))
+            context.append(tx_to_conf(scenario, *tx, internals, encode_fn))
             target_rate = data_rate.item()
 
         all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context)
