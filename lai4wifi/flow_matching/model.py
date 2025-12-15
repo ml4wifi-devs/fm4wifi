@@ -163,35 +163,3 @@ class FlowMatching(nn.Module):
         x, _ = scan(self, z, jnp.linspace(0.0, 1.0, n_steps, endpoint=False))
 
         return clear_graph(x)
-
-
-class SurrogateModel(nn.Module):
-    gnn_layers: int
-    dim: int
-    ff_dim: int
-    n_layers: int
-    n_heads: int
-    drop_rate: float
-    embed_features: None
-    dtype: jnp.dtype
-
-    @nn.compact
-    def __call__(self, x, training=True):
-        transformer_fn = partial(
-            make_transformer,
-            self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, training=training
-        )
-        x = clear_graph(x)
-
-        for _ in range(self.gnn_layers):
-            x = jraph.GraphNetwork(
-                update_edge_fn=transformer_fn(),
-                update_node_fn=transformer_fn(),
-                update_global_fn=transformer_fn(),
-                aggregate_edges_for_nodes_fn=segment_mean,
-                aggregate_nodes_for_globals_fn=segment_mean,
-                aggregate_edges_for_globals_fn=segment_mean
-            )(x)
-
-        x = jraph.GraphMapFeatures(embed_global_fn=make_embed_fn(1, self.dtype))(x)
-        return x.globals.squeeze(-1)

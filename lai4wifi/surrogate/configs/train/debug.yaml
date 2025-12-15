@@ -1,0 +1,13 @@
+ckpt:
+  intermediate: false
+  freq: 500
+log:
+  type: 'stdout'
+  freq: 1
+val:
+  n_steps: 2
+  freq: 5
+batch_size: 64
+n_steps: 1000
+n_timesteps: 3
+seed: 42

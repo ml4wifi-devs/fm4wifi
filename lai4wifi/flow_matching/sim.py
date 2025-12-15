@@ -90,7 +90,7 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--checkpoint', type=str, default='runs/flow_matching_base')
-    args.add_argument('--surrogate', type=str)
+    args.add_argument('--surrogate', type=str, default='../surrogate/runs/surrogate')
     args.add_argument('--n_reps', type=int, default=1)
     args.add_argument('--n_samples_eval', type=int, default=1)
     args.add_argument('--output', type=str, default='all_results.json')

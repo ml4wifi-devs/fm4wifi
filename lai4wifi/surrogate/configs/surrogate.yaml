@@ -2,11 +2,9 @@ defaults:
   - _self_
   - model: base
   - optimizer: base
-  - train: surrogate
+  - train: base
 name: surrogate
-dataset_path: '../dataset/datasets'
-graph_dataset_path: '../graphs/datasets'
-gnn_path: '../graphs/runs/gnn_ae_base'
+dataset_path: 'datasets'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

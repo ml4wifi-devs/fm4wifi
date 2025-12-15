@@ -22,7 +22,6 @@ from tqdm import trange
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example
 from lai4wifi.flow_matching.utils import connections_to_tx, gen_sample, random_tx, tx_to_action, tx_to_conf
-from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 

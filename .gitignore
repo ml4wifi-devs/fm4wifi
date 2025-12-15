@@ -175,3 +175,4 @@ cython_debug/
 wandb/
 runs/
 lai4wifi/flow_matching/datasets
+lai4wifi/surrogate/datasets

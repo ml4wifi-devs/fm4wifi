@@ -15,47 +15,31 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.flow_matching.model import SurrogateModel
-from lai4wifi.graphs.dataset import configuration_to_tx, load_dataset
+from lai4wifi.dataset.utils import load_dataset
+from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.graphs.utils import make_batch
 
 
-RATE_MEAN = 207.1
-RATE_STD = 158.8
-
-
-def load(dataset_path, graph_dataset_path, batch_size, key, val):
-    dataset_paths = glob(f'{dataset_path}/*.pkl.lz4')
-    dataset_paths = filter(lambda p: ('val' in p) == val, dataset_paths)
-    dataset_paths = sorted(dataset_paths)
-    dataset = sum((load_dataset(path) for path in dataset_paths), start=[])
-
-    graph_paths = glob(f'{graph_dataset_path}/*.pkl.lz4')
-    graph_paths = filter(lambda p: ('val' in p) == val, graph_paths)
-    graph_paths = sorted(graph_paths)
-    graphs = sum((load_dataset(path) for path in graph_paths), start=[])
+def load(dataset_path, batch_size, key, val):
+    paths = glob(f'{dataset_path}/*.pkl.lz4')
+    paths = filter(lambda p: ('val' in p) == val, paths)
+    paths = sorted(paths)
+    datasets = sum((load_dataset(path) for path in paths), start=[])
 
     while True:
         graph_batch, rate_batch = [], []
 
         while len(graph_batch) < batch_size:
-            key, dataset_key, config_key, scenario_key = jax.random.split(key, 4)
-            dataset_idx = jax.random.choice(dataset_key, len(dataset))
-            dataset_item = dataset[dataset_idx]
+            key, dataset_key, config_key = jax.random.split(key, 3)
+            dataset_idx = jax.random.choice(dataset_key, len(datasets))
             
-            if len(dataset_item.configurations) == 0:
+            if len(datasets[dataset_idx].configurations) == 0:
                 continue
 
-            config_idx = jax.random.choice(config_key, len(dataset_item.configurations))
-            configuration = dataset_item.configurations[config_idx]
-
-            tx = configuration_to_tx(dataset_item.scenario, configuration)
-            data_rate, _ = dataset_item.scenario(scenario_key, *tx)
-            data_rate = (data_rate - RATE_MEAN) / RATE_STD
-            graph = graphs[dataset_idx].configurations[config_idx]
-            
+            config_idx = jax.random.choice(config_key, len(datasets[dataset_idx].configurations))
+            graph, rate = datasets[dataset_idx].configurations[config_idx]
             graph_batch.append(graph)
-            rate_batch.append(data_rate)
+            rate_batch.append(rate)
 
         yield make_batch(graph_batch), np.asarray(rate_batch + [0.0])
 
@@ -81,8 +65,8 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
 
-    data = load(cfg.dataset_path, cfg.graph_dataset_path, cfg.train.batch_size, data_key, val=False)
-    val_data = iter(load(cfg.dataset_path, cfg.graph_dataset_path, cfg.train.batch_size, val_data_key, val=True))
+    data = load(cfg.dataset_path, cfg.train.batch_size, data_key, val=False)
+    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, val_data_key, val=True))
     sample = next(iter(data))[0]
 
     model = SurrogateModel(**cfg.model)
@@ -107,11 +91,17 @@ def main(cfg):
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
     
+    true_val, pred_val = [], []
+    
     for step, (batch, rates) in zip(range(cfg.train.n_steps), data):
         log_dict = {}
 
         train_key, subkey = jax.random.split(train_key)
         params, opt_state, loss, pred = step_fn(params, opt_state, subkey, batch, rates)
+
+        if step >= 1500:
+            true_val.extend(rates.tolist())
+            pred_val.extend(pred.tolist())
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
@@ -124,6 +114,10 @@ def main(cfg):
                 val_batch, val_rates = next(val_data)
                 loss, pred = loss_fn(params, subkey, val_batch, val_rates)
                 val_loss += loss.item()
+
+                if step >= 1500:
+                    true_val.extend(val_rates.tolist())
+                    pred_val.extend(pred.tolist())
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
 
@@ -139,6 +133,12 @@ def main(cfg):
                 train_key=ocp.args.JaxRandomKeySave(train_key),
                 val_key=ocp.args.JaxRandomKeySave(val_key)
             ))
+
+        with open('predictions.csv', 'w') as f:
+            import csv
+            writer = csv.writer(f)
+            writer.writerow(['true', 'pred'])
+            writer.writerows(zip(true_val, pred_val))
 
     ckpt_manager.wait_until_finished()
     ckpt_manager.close()
