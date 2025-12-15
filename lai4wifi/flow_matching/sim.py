@@ -5,7 +5,6 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 
 import json
 from argparse import ArgumentParser
-from dataclasses import replace
 from functools import partial
 
 import jax
@@ -14,7 +13,7 @@ import jraph
 import orbax.checkpoint as ocp
 from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.utils import connections_to_tx, tx_to_action, tx_to_conf, random_tx
@@ -58,7 +57,10 @@ def eval_with_surrogate(scenario, configs, internals, key, surrogate_fn, encode_
     return best
 
 
-def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, gen_fn, encode_fn, decode_fn, surrogate_fn):
+def run_scenario(
+        scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, ideal_mcs, 
+        gen_fn, encode_fn, decode_fn, surrogate_fn
+):
     key = jax.random.PRNGKey(seed)
     runs = []
     actions = []
@@ -76,7 +78,7 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
             context.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
             internals_ctx.append(internals)
 
-        for step in range(n_steps):
+        for step in trange(n_steps, desc='Steps'):
             key, fm_key, eval_key, scenario_key = jax.random.split(key, 4)
 
             all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context[step:step + n_timesteps])
@@ -96,8 +98,13 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
                 best = eval_with_surrogate(scenario, configs, internals, eval_key, surrogate_fn, encode_fn)
             else:
                 best = eval_with_sim(scenario, configs, eval_key)
+            
+            if ideal_mcs:
+                data_rate, _, internals = scenario(scenario_key, *best[:2], return_internals=True)
+                best = (*best[:2], internals.mcs)
+            else:
+                data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
 
-            data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())
             actions[-1].append(tx_to_action(scenario.associations, internals, *best))
 
@@ -107,9 +114,10 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--checkpoint', type=str, default='runs/flow_matching_base')
-    args.add_argument('--surrogate', type=str, default='../surrogate/runs/surrogate')
+    args.add_argument('--surrogate', type=str)
     args.add_argument('--n_reps', type=int, default=1)
     args.add_argument('--n_samples_eval', type=int, default=1)
+    args.add_argument('--ideal_mcs', default=False, action='store_true')
     args.add_argument('--output', type=str, default='all_results.json')
     args.add_argument('--seed', type=int, default=42)
     args = args.parse_args()
@@ -147,7 +155,7 @@ if __name__ == '__main__':
     for scenario in tqdm(scenarios, desc='Scenarios'):
         runs, actions = run_scenario(
             scenario, args.n_reps, scenario.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval, args.seed, 
-            gen_fn, encode_fn, decode_fn, surrogate_fn
+            args.ideal_mcs, gen_fn, encode_fn, decode_fn, surrogate_fn
         )
         all_results.append([{
             'runs': runs,

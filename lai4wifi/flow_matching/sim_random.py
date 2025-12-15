@@ -12,7 +12,7 @@ import jraph
 import orbax.checkpoint as ocp
 from mapc_research.envs.scenario_impl import random_scenario
 from omegaconf import OmegaConf
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.sim import eval_with_sim, eval_with_surrogate
 from lai4wifi.flow_matching.utils import random_tx, tx_to_action, tx_to_conf
@@ -20,7 +20,10 @@ from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.surrogate.model import SurrogateModel
 
 
-def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, encode_fn, decode_fn):
+def run_scenario(
+        scenario, n_reps, n_steps, n_samples_eval, seed, ideal_mcs, 
+        surrogate_fn, encode_fn, decode_fn
+):
     key = jax.random.PRNGKey(seed)
     runs = []
     actions = []
@@ -30,7 +33,7 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, 
         runs.append([])
         actions.append([])
 
-        for _ in range(n_steps):
+        for _ in trange(n_steps, desc='Steps'):
             key, rand_key, eval_key, scenario_key = jax.random.split(key, 4)
             graphs = []
 
@@ -47,8 +50,13 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, 
                 best = eval_with_surrogate(scenario, configs, internals, eval_key, surrogate_fn, encode_fn)
             else:
                 best = eval_with_sim(scenario, configs, eval_key)
+            
+            if ideal_mcs:
+                data_rate, _, internals = scenario(scenario_key, *best[:2], return_internals=True)
+                best = (*best[:2], internals.mcs)
+            else:
+                data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
 
-            data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())
             actions[-1].append(tx_to_action(scenario.associations, internals, *best))
 
@@ -57,9 +65,10 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, 
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--checkpoint', type=str, default='runs/surrogate_base')
+    args.add_argument('--surrogate', type=str)
     args.add_argument('--n_reps', type=int, default=1)
-    args.add_argument('--n_samples_eval', type=int, default=32)
+    args.add_argument('--n_samples_eval', type=int, default=1)
+    args.add_argument('--ideal_mcs', default=False, action='store_true')
     args.add_argument('--output', type=str, default='all_results.json')
     args.add_argument('--seed', type=int, default=42)
     args = args.parse_args()
@@ -86,7 +95,8 @@ if __name__ == '__main__':
 
     for scenario in tqdm(scenarios, desc='Scenarios'):
         runs, actions = run_scenario(
-            scenario, args.n_reps, scenario.n_steps, args.n_samples_eval, args.seed, surrogate_fn, encode_fn, decode_fn
+            scenario, args.n_reps, scenario.n_steps, args.n_samples_eval, args.seed, 
+            args.ideal_mcs, surrogate_fn, encode_fn, decode_fn
         )
         all_results.append([{
             'runs': runs,
