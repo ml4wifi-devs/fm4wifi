@@ -46,10 +46,9 @@ def eval_with_surrogate(scenario, configs, internals, key, surrogate_fn, encode_
         graphs.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
 
     graphs = jraph.batch(graphs)
-    embeddings = encode_fn(graphs)
-    embeddings = clear_graph(embeddings)
+    graphs = clear_graph(graphs)
 
-    pred = surrogate_fn(embeddings)
+    pred = surrogate_fn(graphs)
     best_idx = jnp.argmax(pred)
     best_zt = jraph.unbatch(configs)[best_idx]
     best = connections_to_tx(scenario.associations, key, best_zt)
