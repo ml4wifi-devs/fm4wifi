@@ -152,10 +152,13 @@ def random_tx(key, scenario):
     return tx, tx_power, mcs
 
 
-def tx_to_conf(scenario, tx, tx_power, mcs, internals, encode_fn):
+def tx_to_conf(scenario, tx, tx_power, mcs, internals, encode_fn, add_success=True):
     G = nx.Graph()
     G_base = associations_to_nx(scenario)
     succ_prob = internals.frames_transmitted / np.maximum(internals.ampdu_size, 1)
+
+    if not add_success:
+        succ_prob = np.zeros_like(succ_prob)
 
     for ap, stas in scenario.associations.items():
         for sta in stas:

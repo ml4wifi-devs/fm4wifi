@@ -91,17 +91,11 @@ def main(cfg):
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
     
-    true_val, pred_val = [], []
-    
     for step, (batch, rates) in zip(range(cfg.train.n_steps), data):
         log_dict = {}
 
         train_key, subkey = jax.random.split(train_key)
         params, opt_state, loss, pred = step_fn(params, opt_state, subkey, batch, rates)
-
-        if step >= 1500:
-            true_val.extend(rates.tolist())
-            pred_val.extend(pred.tolist())
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
@@ -114,10 +108,6 @@ def main(cfg):
                 val_batch, val_rates = next(val_data)
                 loss, pred = loss_fn(params, subkey, val_batch, val_rates)
                 val_loss += loss.item()
-
-                if step >= 1500:
-                    true_val.extend(val_rates.tolist())
-                    pred_val.extend(pred.tolist())
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
 
@@ -133,12 +123,6 @@ def main(cfg):
                 train_key=ocp.args.JaxRandomKeySave(train_key),
                 val_key=ocp.args.JaxRandomKeySave(val_key)
             ))
-
-        with open('predictions.csv', 'w') as f:
-            import csv
-            writer = csv.writer(f)
-            writer.writerow(['true', 'pred'])
-            writer.writerows(zip(true_val, pred_val))
 
     ckpt_manager.wait_until_finished()
     ckpt_manager.close()

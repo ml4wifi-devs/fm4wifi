@@ -14,10 +14,10 @@ from mapc_research.envs.scenario_impl import random_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
-from lai4wifi.flow_matching.model import SurrogateModel
 from lai4wifi.flow_matching.sim import eval_with_sim, eval_with_surrogate
 from lai4wifi.flow_matching.utils import random_tx, tx_to_action, tx_to_conf
 from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.surrogate.model import SurrogateModel
 
 
 def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, encode_fn, decode_fn):
@@ -31,22 +31,22 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, surrogate_fn, 
         actions.append([])
 
         for _ in range(n_steps):
-            key, rand_key, gnn_key, eval_key, scenario_key = jax.random.split(key, 5)
+            key, rand_key, eval_key, scenario_key = jax.random.split(key, 4)
             graphs = []
 
             for _ in range(n_samples_eval):
                 rand_key, tx_key, sim_key = jax.random.split(rand_key, 3)
                 tx = random_tx(tx_key, scenario)
                 _, _, internals = scenario(sim_key, *tx, return_internals=True)
-                graphs.append(tx_to_conf(scenario, *tx, internals, encode_fn))
+                graphs.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
 
-            x_eval = jraph.batch(graphs)
-            z = encode_fn(x_eval, rngs=gnn_key)
+            z_eval = jraph.batch(graphs)
+            configs = decode_fn(z_eval)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, z, eval_key, surrogate_fn)
+                best = eval_with_surrogate(scenario, configs, internals, eval_key, surrogate_fn, encode_fn)
             else:
-                best = eval_with_sim(scenario, z, eval_key, decode_fn)
+                best = eval_with_sim(scenario, configs, eval_key)
 
             data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())

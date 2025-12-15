@@ -5,6 +5,7 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 
 import json
 from argparse import ArgumentParser
+from dataclasses import replace
 from functools import partial
 
 import jax
@@ -15,15 +16,17 @@ from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm
 
-from lai4wifi.flow_matching.model import FlowMatching, SurrogateModel
+from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.utils import connections_to_tx, tx_to_action, tx_to_conf, random_tx
 from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import clear_graph
+from lai4wifi.surrogate.model import SurrogateModel
 
 
-def eval_with_sim(scenario, z, key, decode_fn):
+def eval_with_sim(scenario, configs, key):
     best, best_val = None, float('-inf')
 
-    for zt in jraph.unbatch(decode_fn(z)):
+    for zt in jraph.unbatch(configs):
         key, tx_key, scenario_key = jax.random.split(key, 3)
         tx = connections_to_tx(scenario.associations, tx_key, zt)
         data_rate, _ = scenario(scenario_key, *tx, return_internals=False)
@@ -35,12 +38,23 @@ def eval_with_sim(scenario, z, key, decode_fn):
     return best
 
 
-def eval_with_surrogate(scenario, z, key, surrogate_fn):
-    model_key, tx_key = jax.random.split(key)
-    pred = surrogate_fn(z, rngs=model_key)
+def eval_with_surrogate(scenario, configs, internals, key, surrogate_fn, encode_fn):
+    graphs = []
+
+    for zt in jraph.unbatch(configs):
+        key, tx_key = jax.random.split(key)
+        tx = connections_to_tx(scenario.associations, tx_key, zt)
+        graphs.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
+
+    graphs = jraph.batch(graphs)
+    embeddings = encode_fn(graphs)
+    embeddings = clear_graph(embeddings)
+
+    pred = surrogate_fn(embeddings)
     best_idx = jnp.argmax(pred)
-    best_zt = jraph.unbatch(z)[best_idx]
-    best = connections_to_tx(scenario.associations, tx_key, best_zt)
+    best_zt = jraph.unbatch(configs)[best_idx]
+    best = connections_to_tx(scenario.associations, key, best_zt)
+    
     return best
 
 
@@ -53,13 +67,14 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
         scenario.reset()
         runs.append([])
         actions.append([])
-        context = []
+        context, internals_ctx = [], []
 
         for _ in range(n_timesteps + n_steps):
             key, tx_key, sim_key = jax.random.split(key, 3)
             tx = random_tx(tx_key, scenario)
-            data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
-            context.append(tx_to_conf(scenario, *tx, internals, encode_fn))
+            _, _, internals = scenario(sim_key, *tx, return_internals=True)
+            context.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
+            internals_ctx.append(internals)
 
         for step in range(n_steps):
             key, fm_key, eval_key, scenario_key = jax.random.split(key, 4)
@@ -70,15 +85,17 @@ def run_scenario(scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, g
                 nodes=all.nodes,
                 globals=all.globals
             )
+            internals = internals_ctx[step + n_timesteps - 1]
 
             # https://arxiv.org/abs/2412.08296
             x_eval = jraph.batch([x for _ in range(n_samples_eval)])
-            z = gen_fn(x_eval, rngs=fm_key)
+            z_eval = gen_fn(x_eval, rngs=fm_key)
+            configs = decode_fn(z_eval)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, z, eval_key, surrogate_fn)
+                best = eval_with_surrogate(scenario, configs, internals, eval_key, surrogate_fn, encode_fn)
             else:
-                best = eval_with_sim(scenario, z, eval_key, decode_fn)
+                best = eval_with_sim(scenario, configs, eval_key)
 
             data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
             runs[-1].append(data_rate.item())
