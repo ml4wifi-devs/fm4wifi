@@ -11,12 +11,11 @@ import jax
 import jax.numpy as jnp
 import jraph
 import orbax.checkpoint as ocp
-from mapc_research.envs.scenario_impl import residential_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.utils import connections_to_tx, tx_to_action, tx_to_conf, random_tx
+from lai4wifi.flow_matching.utils import TEST_SCENARIOS, connections_to_tx, tx_to_action, tx_to_conf, random_tx
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import clear_graph
 from lai4wifi.surrogate.model import SurrogateModel
@@ -148,12 +147,9 @@ if __name__ == '__main__':
     encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
     decode_fn = jax.jit(partial(gnn.apply, gnn_params, method='decode'))
 
-    scenarios = [
-        residential_scenario(seed=12, n_steps=500, x_apartments=2, y_apartments=2, n_sta_per_ap=4, size=30.0)
-    ]
     all_results = []
 
-    for scenario in tqdm(scenarios, desc='Scenarios'):
+    for scenario in tqdm(TEST_SCENARIOS, desc='Scenarios'):
         runs, actions = run_scenario(
             scenario, args.n_reps, scenario.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval, args.seed, 
             args.ideal_mcs, gen_fn, encode_fn, decode_fn, surrogate_fn

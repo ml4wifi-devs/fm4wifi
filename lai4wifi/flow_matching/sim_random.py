@@ -15,7 +15,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.sim import eval_with_sim, eval_with_surrogate
-from lai4wifi.flow_matching.utils import random_tx, tx_to_action, tx_to_conf
+from lai4wifi.flow_matching.utils import TEST_SCENARIOS, random_tx, tx_to_action, tx_to_conf
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.surrogate.model import SurrogateModel
 
@@ -88,12 +88,9 @@ if __name__ == '__main__':
     encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
     decode_fn = jax.jit(partial(gnn.apply, gnn_params, method='decode'))
 
-    scenarios = [
-        random_scenario(seed=100, d_ap=75., d_sta=8., n_ap=2, n_sta_per_ap=5, n_steps=1000),
-    ]
     all_results = []
 
-    for scenario in tqdm(scenarios, desc='Scenarios'):
+    for scenario in tqdm(TEST_SCENARIOS, desc='Scenarios'):
         runs, actions = run_scenario(
             scenario, args.n_reps, scenario.n_steps, args.n_samples_eval, args.seed, 
             args.ideal_mcs, surrogate_fn, encode_fn, decode_fn

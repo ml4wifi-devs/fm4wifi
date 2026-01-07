@@ -1,3 +1,6 @@
+import os
+os.environ['JAX_ENABLE_X64'] = 'True'
+
 from collections import defaultdict
 from itertools import combinations
 
@@ -5,11 +8,17 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import networkx as nx
+from mapc_research.envs.scenario_impl import residential_scenario
 from mapc_sim.constants import DEFAULT_TX_POWER
 
 from lai4wifi.graphs.attributes import *
 from lai4wifi.graphs.dataset import RSSI_MEAN, RSSI_STD, RSSI_THR
 from lai4wifi.graphs.utils import clear_graph, nx_to_jraph
+
+
+TEST_SCENARIOS = [
+    residential_scenario(seed=12, n_steps=500, x_apartments=2, y_apartments=2, n_sta_per_ap=4, size=30.0)
+]
 
 
 def associations_to_nx(scenario):
