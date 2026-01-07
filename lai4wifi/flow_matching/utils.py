@@ -24,7 +24,7 @@ def associations_to_nx(scenario):
                 sta = sta.item()
 
             rssi = (DEFAULT_TX_POWER - path_loss[ap, sta] - RSSI_MEAN) / RSSI_STD
-            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
+            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.FALSE, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
 
     for ap_1, ap_2 in combinations(scenario.associations.keys(), r=2):
         rssi = (DEFAULT_TX_POWER - path_loss[ap_1, ap_2] - RSSI_MEAN) / RSSI_STD
@@ -66,22 +66,30 @@ def get_initial_configurations(scenario, n_timesteps, key, encode_fn):
 
 def connections_to_tx(associations, key, graph):
     n_nodes = len(associations) + sum(len(stas) for stas in associations.values())
-    selected = defaultdict(list)
+    selected_idxs = defaultdict(list)
     connections = graph.edges
 
-    for i in range(graph.n_edge[0]):
-        ap, sta = graph.senders[i].item(), graph.receivers[i].item()
-        if ap in associations and sta in associations[ap] and np.argmax(connections.selected[i]) == IsSelected.TRUE.value:
-            selected[ap].append(i)
+    for idx in range(graph.n_edge[0]):
+        ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
+
+        ap_sta_edge = ap in associations and sta in associations[ap]
+        not_na = connections.selected[idx, -1] < 0.5
+        selected = np.argmax(connections.selected[idx, :-1]) == IsSelected.TRUE.value
+        
+        if ap_sta_edge and not_na and selected:
+            selected_idxs[ap].append(idx)
 
     tx_matrix = np.zeros((n_nodes, n_nodes), dtype=int)
     tx_power = np.zeros(n_nodes, dtype=int)
     mcs = np.zeros(n_nodes, dtype=int)
     selected_for_tx = []
 
-    for ap, sta_indices in selected.items():
-        key, subkey = jax.random.split(key)
-        selected_sta_idx = jax.random.choice(subkey, len(sta_indices), replace=False).item()
+    for ap, sta_indices in selected_idxs.items():
+        if len(sta_indices) > 1:
+            key, subkey = jax.random.split(key)
+            selected_sta_idx = jax.random.choice(subkey, len(sta_indices), replace=False).item()
+        else:
+            selected_sta_idx = 0
         selected_for_tx.append(sta_indices[selected_sta_idx])
 
     for idx in selected_for_tx:
@@ -166,7 +174,7 @@ def tx_to_conf(scenario, tx, tx_power, mcs, internals, encode_fn, add_success=Tr
                 sta = sta.item()
 
             rssi = (internals.signal_power[ap, sta] - RSSI_MEAN) / RSSI_STD
-            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
+            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.FALSE, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
     
     for ap, sta in zip(*np.where(tx)):
         ap, sta = ap.item(), sta.item()

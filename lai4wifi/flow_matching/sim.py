@@ -74,7 +74,7 @@ def run_scenario(
             key, tx_key, sim_key = jax.random.split(key, 3)
             tx = random_tx(tx_key, scenario)
             _, _, internals = scenario(sim_key, *tx, return_internals=True)
-            context.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
+            context.append(tx_to_conf(scenario, *tx, internals, encode_fn))
             internals_ctx.append(internals)
 
         for step in trange(n_steps, desc='Steps'):
@@ -99,8 +99,10 @@ def run_scenario(
                 best = eval_with_sim(scenario, configs, eval_key)
             
             if ideal_mcs:
-                data_rate, _, internals = scenario(scenario_key, *best[:2], return_internals=True)
-                best = (*best[:2], internals.mcs)
+                best_tx, best_tx_power, _ = best
+                best = (best_tx, best_tx_power)
+                data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
+                best = (*best, internals.mcs)
             else:
                 data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
 
