@@ -5,6 +5,7 @@ defaults:
   - train: base
 name: surrogate
 dataset_path: 'datasets'
+gnn_path: '../graphs/runs/gnn_ae_base'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

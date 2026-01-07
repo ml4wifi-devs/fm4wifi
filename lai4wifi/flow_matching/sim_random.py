@@ -73,8 +73,8 @@ if __name__ == '__main__':
     args.add_argument('--seed', type=int, default=42)
     args = args.parse_args()
 
-    cfg = OmegaConf.load(os.path.join(args.checkpoint, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(args.checkpoint), item_names=['params']) as ckpt_manager:
+    cfg = OmegaConf.load(os.path.join(args.surrogate, 'config.yaml'))
+    with ocp.CheckpointManager(os.path.abspath(args.surrogate), item_names=['params']) as ckpt_manager:
         s_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
 
     surrogate = SurrogateModel(**cfg.model)
