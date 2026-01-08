@@ -24,12 +24,12 @@ python sim.py --checkpoint runs/flow_matching_rl --ideal_mcs --n_samples_eval 32
 
 # ------------------------------
 
-python sim_random.py --surrogate ../surrogate/runs/surrogate --n_samples_eval 1 --output results_mcs_surrogate_random_one.json
-python sim_random.py --surrogate ../surrogate/runs/surrogate --n_samples_eval 32 --output results_mcs_surrogate_random_multi.json
-python sim_random.py --n_samples_eval 1 --output results_mcs_sim_random_one.json
-python sim_random.py --n_samples_eval 32 --output results_mcs_sim_random_multi.json
+python sim_random.py --surrogate ../surrogate/runs/surrogate --use_surrogate --n_samples_eval 1 --output results_mcs_surrogate_random_one.json
+python sim_random.py --surrogate ../surrogate/runs/surrogate --use_surrogate --n_samples_eval 32 --output results_mcs_surrogate_random_multi.json
+python sim_random.py --surrogate ../surrogate/runs/surrogate --n_samples_eval 1 --output results_mcs_sim_random_one.json
+python sim_random.py --surrogate ../surrogate/runs/surrogate --n_samples_eval 32 --output results_mcs_sim_random_multi.json
 
-python sim_random.py --ideal_mcs --surrogate ../surrogate/runs/surrogate --n_samples_eval 1 --output results_power_surrogate_random_one.json
-python sim_random.py --ideal_mcs --surrogate ../surrogate/runs/surrogate --n_samples_eval 32 --output results_power_surrogate_random_multi.json
-python sim_random.py --ideal_mcs --n_samples_eval 1 --output results_power_sim_random_one.json
-python sim_random.py --ideal_mcs --n_samples_eval 32 --output results_power_sim_random_multi.json
+python sim_random.py --ideal_mcs --surrogate ../surrogate/runs/surrogate --use_surrogate --n_samples_eval 1 --output results_power_surrogate_random_one.json
+python sim_random.py --ideal_mcs --surrogate ../surrogate/runs/surrogate --use_surrogate --n_samples_eval 32 --output results_power_surrogate_random_multi.json
+python sim_random.py --ideal_mcs --surrogate ../surrogate/runs/surrogate --n_samples_eval 1 --output results_power_sim_random_one.json
+python sim_random.py --ideal_mcs --surrogate ../surrogate/runs/surrogate --n_samples_eval 32 --output results_power_sim_random_multi.json

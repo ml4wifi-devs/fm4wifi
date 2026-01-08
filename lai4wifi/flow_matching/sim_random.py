@@ -10,7 +10,6 @@ from functools import partial
 import jax
 import jraph
 import orbax.checkpoint as ocp
-from mapc_research.envs.scenario_impl import random_scenario
 from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
@@ -21,7 +20,7 @@ from lai4wifi.surrogate.model import SurrogateModel
 
 
 def run_scenario(
-        scenario, n_reps, n_steps, n_samples_eval, seed, ideal_mcs, 
+        scenario, n_reps, n_steps, n_samples_eval, seed, ideal_mcs, use_surrogate,
         surrogate_fn, encode_fn, decode_fn
 ):
     key = jax.random.PRNGKey(seed)
@@ -46,14 +45,16 @@ def run_scenario(
             z_eval = jraph.batch(graphs)
             configs = decode_fn(z_eval)
 
-            if surrogate_fn is not None:
+            if use_surrogate:
                 best = eval_with_surrogate(scenario, configs, internals, eval_key, surrogate_fn, encode_fn)
             else:
                 best = eval_with_sim(scenario, configs, eval_key)
             
             if ideal_mcs:
-                data_rate, _, internals = scenario(scenario_key, *best[:2], return_internals=True)
-                best = (*best[:2], internals.mcs)
+                best_tx, best_tx_power, _ = best
+                best = (best_tx, best_tx_power)
+                data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
+                best = (*best, internals.mcs)
             else:
                 data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
 
@@ -66,6 +67,7 @@ def run_scenario(
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--surrogate', type=str)
+    args.add_argument('--use_surrogate', default=False, action='store_true')
     args.add_argument('--n_reps', type=int, default=1)
     args.add_argument('--n_samples_eval', type=int, default=1)
     args.add_argument('--ideal_mcs', default=False, action='store_true')
@@ -93,7 +95,7 @@ if __name__ == '__main__':
     for scenario in tqdm(TEST_SCENARIOS, desc='Scenarios'):
         runs, actions = run_scenario(
             scenario, args.n_reps, scenario.n_steps, args.n_samples_eval, args.seed, 
-            args.ideal_mcs, surrogate_fn, encode_fn, decode_fn
+            args.ideal_mcs, args.use_surrogate, surrogate_fn, encode_fn, decode_fn
         )
         all_results.append([{
             'runs': runs,
