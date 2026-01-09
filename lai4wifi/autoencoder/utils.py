@@ -8,7 +8,7 @@ import jraph
 import networkx as nx
 
 from lai4wifi.autoencoder.attributes import Connection, IsSelected
-
+from jax.typing import ArrayLike
 
 @dataclass
 class Graph:
@@ -90,3 +90,10 @@ def eig_laplacian(senders, receivers, n_nodes, k):
         evals = jnp.pad(evals, pad_width, mode='constant', constant_values=jnp.nan)
 
     return evals, evects
+
+def quantile_loss(predictions: ArrayLike, targets:ArrayLike, tau=0.9) -> jax.Array:
+    """https://en.wikipedia.org/wiki/Quantile_regression"""
+    errors = targets - predictions
+    return jnp.where(errors<jnp.zeros_like(errors),
+                     (tau-jnp.ones_like(tau)) * errors,
+                     tau * errors)
