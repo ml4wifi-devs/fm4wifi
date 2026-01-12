@@ -8,6 +8,7 @@ from glob import glob
 
 import hydra
 import jax
+import jax.numpy as jnp
 import numpy as np
 import jraph
 import optax
@@ -46,12 +47,22 @@ def load(dataset_path, batch_size, key, val):
 
 @hydra.main(config_path='configs', config_name='surrogate', version_base=None)
 def main(cfg):
+    
+    def quantile_loss(predictions, targets, tau=0.9):
+        """aka pinball loss https://en.wikipedia.org/wiki/Quantile_regression"""
+        errors = targets - predictions
+        return jnp.where(errors < 0, (tau - 1) * errors, tau * errors)
+
+    def soft_quantile_loss(predictions, targets, tau=0.9, b=4.0):
+        """Soft approximation to quantile loss using squareplus function - this avoids transcendental functions"""
+        errors = targets - predictions
+        return ((2.0 * tau - 1.0) * errors + jnp.sqrt(errors ** 2 + b)) / 2.0
 
     @jax.jit
     def loss_fn(params, key, batch, rates):
         pred = model.apply(params, batch, rngs=key)
         mask = jraph.get_graph_padding_mask(batch)
-        loss = optax.squared_error(pred, rates)
+        loss = quantile_loss(pred, rates)
         loss = (mask * loss).sum() / mask.sum()
         return loss, pred
 
