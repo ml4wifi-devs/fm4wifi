@@ -91,9 +91,19 @@ def eig_laplacian(senders, receivers, n_nodes, k):
 
     return evals, evects
 
-def quantile_loss(predictions: ArrayLike, targets:ArrayLike, tau=0.9) -> jax.Array:
-    """https://en.wikipedia.org/wiki/Quantile_regression"""
+def quantile_loss(predictions: jax.Array, targets: jax.Array, tau=0.9) -> jax.Array:
+    """aka pinball loss https://en.wikipedia.org/wiki/Quantile_regression"""
     errors = targets - predictions
-    return jnp.where(errors<jnp.zeros_like(errors),
-                     (tau-jnp.ones_like(tau)) * errors,
-                     tau * errors)
+    return jnp.where(
+        errors < jnp.zeros_like(errors),
+        (tau - jnp.ones_like(tau)) * errors,
+        tau * errors,
+    )
+
+
+def soft_quantile_loss(
+    predictions: jax.Array, targets: jax.Array, tau=0.9, b=4.0
+) -> jax.Array:
+    """Soft approximation to quantile loss using squareplus function - this avoids transcendental functions"""
+    errors = targets - predictions
+    return ((2.0 * tau - 1.0) * errors + jnp.sqrt(errors**2 + b)) / 2.0
