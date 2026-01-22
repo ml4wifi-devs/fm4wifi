@@ -69,8 +69,8 @@ class Transformer(nn.Module):
         return x
 
 
-def compute_segment_ids(n_elements):
-    return jnp.repeat(jnp.arange(n_elements.shape[0]), n_elements, total_repeat_length=n_elements.sum())
+def compute_segment_ids(n_elements, total_length):
+    return jnp.searchsorted(jnp.cumsum(n_elements), jnp.arange(total_length), side='right')
 
 
 def make_transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype, segment_ids=None, training=True):
@@ -125,8 +125,8 @@ class FlowMatching(nn.Module):
             self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, segment_ids, training=training
         )
         
-        edge_segment_ids = compute_segment_ids(x.n_edge)
-        node_segment_ids = compute_segment_ids(x.n_node)
+        edge_segment_ids = compute_segment_ids(x.n_edge, x.edges.shape[0])
+        node_segment_ids = compute_segment_ids(x.n_node, x.nodes.shape[0])
         global_segment_ids = jnp.arange(x.n_node.shape[0])
 
         x = x._replace(
