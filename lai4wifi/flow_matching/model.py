@@ -1,5 +1,3 @@
-from functools import partial
-
 import jax
 import jax.numpy as jnp
 import jraph
@@ -61,20 +59,29 @@ class Transformer(nn.Module):
     dtype: jnp.dtype
 
     @nn.compact
-    def __call__(self, x, training=True):
+    def __call__(self, x, mask=None, training=True):
         x = nn.Dense(self.dim, dtype=self.dtype, use_bias=False)(x)
 
         for _ in range(self.n_layers):
-            x = TransformerBlock(self.n_heads, self.ff_dim, self.drop_rate, self.dtype)(x, mask=None, training=training)
+            x = TransformerBlock(self.n_heads, self.ff_dim, self.drop_rate, self.dtype)(x, mask=mask, training=training)
 
         x = nn.LayerNorm(dtype=self.dtype)(x)
         return x
 
 
-def make_transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype, training=True):
+def compute_segment_ids(n_elements):
+    return jnp.repeat(jnp.arange(n_elements.shape[0]), n_elements, total_repeat_length=n_elements.sum())
+
+
+def make_transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype, segment_ids=None, training=True):
+    if segment_ids is not None:
+        mask = segment_ids[:, None] == segment_ids[None, :]
+    else:
+        mask = None
+
     @jraph.concatenated_args
     def update_fn(inputs):
-        return Transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype)(inputs, training=training)
+        return Transformer(dim, ff_dim, n_layers, n_heads, drop_rate, dtype)(inputs, mask=mask, training=training)
 
     return update_fn
 
@@ -114,10 +121,13 @@ class FlowMatching(nn.Module):
 
     @nn.compact
     def __call__(self, x, t, training=True):
-        transformer_fn = partial(
-            make_transformer,
-            self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, training=training
+        transformer_fn = lambda segment_ids: make_transformer(
+            self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, segment_ids, training=training
         )
+        
+        edge_segment_ids = compute_segment_ids(x.n_edge)
+        node_segment_ids = compute_segment_ids(x.n_node)
+        global_segment_ids = jnp.arange(x.n_node.shape[0])
 
         x = x._replace(
             edges=x.edges.reshape(x.edges.shape[0], -1),
@@ -129,9 +139,9 @@ class FlowMatching(nn.Module):
 
         for _ in range(self.gnn_layers):
             x = jraph.GraphNetwork(
-                update_edge_fn=transformer_fn(),
-                update_node_fn=transformer_fn(),
-                update_global_fn=transformer_fn(),
+                update_edge_fn=transformer_fn(edge_segment_ids),
+                update_node_fn=transformer_fn(node_segment_ids),
+                update_global_fn=transformer_fn(global_segment_ids),
                 aggregate_edges_for_nodes_fn=segment_mean,
                 aggregate_nodes_for_globals_fn=segment_mean,
                 aggregate_edges_for_globals_fn=segment_mean
