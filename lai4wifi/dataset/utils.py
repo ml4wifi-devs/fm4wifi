@@ -64,7 +64,7 @@ class TxPair:
     sta: int
     mcs: int
     tx_power: int
-    success: float = 1.0
+    success: float
 
 
 @dataclass

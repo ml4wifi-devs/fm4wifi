@@ -10,7 +10,6 @@ import jax.numpy as jnp
 from tqdm import tqdm
 
 from lai4wifi.dataset.utils import load_dataset, save_dataset
-from lai4wifi.flow_matching.dataset import load_model
 from lai4wifi.flow_matching.utils import connections_to_tx
 from lai4wifi.graphs.utils import clear_graph, make_batch, unbatch
 
@@ -19,7 +18,7 @@ RATE_MEAN = 207.1
 RATE_STD = 158.8
 
 
-def config_to_rate_dataset(dataset, model, params):
+def config_to_rate_dataset(dataset):
     key = jax.random.key(42)
 
     for dataset_item in tqdm(dataset):
@@ -40,30 +39,24 @@ def config_to_rate_dataset(dataset, model, params):
                 edges=replace(graph.edges, success=jnp.zeros_like(graph.edges.success))
             )
             graphs.append(graph)
-        
-        batch = make_batch(graphs)
-        embeddings = jax.jit(model.apply, static_argnames='method')(params, batch, method='encode')
-        embeddings = clear_graph(embeddings)
-        graphs = unbatch(embeddings)
 
         dataset_item.configurations = list(zip(graphs, data_rates))
     
     return dataset
 
 
-def convert_dataset(dataset_path, save_path, model, params):
+def convert_dataset(dataset_path, save_path):
     dataset = load_dataset(dataset_path)
-    dataset = config_to_rate_dataset(dataset, model, params)
+    dataset = config_to_rate_dataset(dataset)
     save_dataset(dataset, save_path)
 
 
 if __name__ == '__main__':
-    model, params = load_model('../graphs/runs/gnn_ae_base')
-    convert_dataset('../graphs/datasets/f_opt_dataset.pkl.lz4', 'datasets/f_opt_dataset.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/f_opt_val_dataset.pkl.lz4', 'datasets/f_opt_val_dataset.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/t_opt_dataset.pkl.lz4', 'datasets/t_opt_dataset.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/t_opt_val_dataset.pkl.lz4', 'datasets/t_opt_val_dataset.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/h_mab_dataset.pkl.lz4', 'datasets/h_mab_dataset.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/h_mab_val_dataset.pkl.lz4', 'datasets/h_mab_val_dataset.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/random_dataset.pkl.lz4', 'datasets/random_dataset.pkl.lz4', model, params)
-    convert_dataset('../graphs/datasets/random_val_dataset.pkl.lz4', 'datasets/random_val_dataset.pkl.lz4', model, params)
+    convert_dataset('../graphs/datasets/f_opt_dataset.pkl.lz4', 'datasets/f_opt_dataset.pkl.lz4')
+    convert_dataset('../graphs/datasets/f_opt_val_dataset.pkl.lz4', 'datasets/f_opt_val_dataset.pkl.lz4')
+    convert_dataset('../graphs/datasets/t_opt_dataset.pkl.lz4', 'datasets/t_opt_dataset.pkl.lz4')
+    convert_dataset('../graphs/datasets/t_opt_val_dataset.pkl.lz4', 'datasets/t_opt_val_dataset.pkl.lz4')
+    convert_dataset('../graphs/datasets/h_mab_dataset.pkl.lz4', 'datasets/h_mab_dataset.pkl.lz4')
+    convert_dataset('../graphs/datasets/h_mab_val_dataset.pkl.lz4', 'datasets/h_mab_val_dataset.pkl.lz4')
+    convert_dataset('../graphs/datasets/random_dataset.pkl.lz4', 'datasets/random_dataset.pkl.lz4')
+    convert_dataset('../graphs/datasets/random_val_dataset.pkl.lz4', 'datasets/random_val_dataset.pkl.lz4')

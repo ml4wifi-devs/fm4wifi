@@ -82,17 +82,22 @@ def random_tx(key, scenario):
     return tx, tx_power, mcs
 
 
-def tx_to_conf(tx, tx_power, mcs, internals, add_success=True):
+def tx_to_conf(tx, tx_power, mcs, internals):
     sta, ap = np.where(tx)
     mcs = [mcs[a].item() for a in ap]
     tx_power = [tx_power[a].item() for a in ap]
-    succ_prob = (internals.frames_transmitted / np.maximum(internals.ampdu_size, 1))
-    succ_prob = [succ_prob[a].item() if add_success else 1.0 for a in ap]
+    
+    if internals is not None:
+        succ_prob = (internals.frames_transmitted / np.maximum(internals.ampdu_size, 1))
+        succ_prob = [succ_prob[a].item() for a in ap]
+    else:
+        succ_prob = [0.0 for _ in ap]
+    
     return Configuration([TxPair(a, s, m, t, p) for a, s, m, t, p in zip(ap, sta, mcs, tx_power, succ_prob)])
 
 
-def tx_to_jraph(scenario, tx, tx_power, mcs, internals, encode_fn=None, add_success=True):
-    conf = tx_to_conf(tx, tx_power, mcs, internals, add_success)
+def tx_to_jraph(scenario, tx, tx_power, mcs, internals=None, encode_fn=None):
+    conf = tx_to_conf(tx, tx_power, mcs, internals)
     G = conf_to_nx(scenario, conf)
     graph = nx_to_jraph(G)
     if encode_fn is not None:

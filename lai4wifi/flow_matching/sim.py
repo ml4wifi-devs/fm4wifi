@@ -36,22 +36,22 @@ def eval_with_sim(scenario, configs, key):
     return best
 
 
-def eval_with_surrogate(scenario, configs, internals, key, surrogate_fn, encode_fn):
+def eval_with_surrogate(scenario, configs, key, surrogate_fn):
     graphs = []
 
     for zt in jraph.unbatch(configs):
         key, tx_key = jax.random.split(key)
         tx = connections_to_tx(scenario.associations, tx_key, zt)
-        graphs.append(tx_to_jraph(scenario, *tx, internals, encode_fn, add_success=False))
+        graphs.append(tx_to_jraph(scenario, *tx))
 
     graphs = make_batch(graphs)
-    graphs = clear_graph(graphs)
-
     pred = surrogate_fn(graphs)
+
     mask = jraph.get_graph_padding_mask(graphs)
     pred = jnp.where(mask, pred, -jnp.inf)
     best_idx = jnp.argmax(pred)
-    best_zt = jraph.unbatch(configs)[best_idx]
+    
+    best_zt = jraph.unbatch(graphs)[best_idx]
     best = connections_to_tx(scenario.associations, key, best_zt)
     
     return best
@@ -95,7 +95,7 @@ def run_scenario(
             configs = decode_fn(z_eval)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, configs, internals, eval_key, surrogate_fn, encode_fn)
+                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn)
             else:
                 best = eval_with_sim(scenario, configs, eval_key)
             
