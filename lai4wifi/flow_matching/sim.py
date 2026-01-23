@@ -15,7 +15,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.utils import TEST_SCENARIOS, connections_to_tx, tx_to_action, tx_to_conf, random_tx
+from lai4wifi.flow_matching.utils import TEST_SCENARIOS, connections_to_tx, tx_to_action, tx_to_jraph, random_tx
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import clear_graph, make_batch
 from lai4wifi.surrogate.model import SurrogateModel
@@ -42,7 +42,7 @@ def eval_with_surrogate(scenario, configs, internals, key, surrogate_fn, encode_
     for zt in jraph.unbatch(configs):
         key, tx_key = jax.random.split(key)
         tx = connections_to_tx(scenario.associations, tx_key, zt)
-        graphs.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
+        graphs.append(tx_to_jraph(scenario, *tx, internals, encode_fn, add_success=False))
 
     graphs = make_batch(graphs)
     graphs = clear_graph(graphs)
@@ -75,7 +75,7 @@ def run_scenario(
             key, tx_key, sim_key = jax.random.split(key, 3)
             tx = random_tx(tx_key, scenario)
             _, _, internals = scenario(sim_key, *tx, return_internals=True)
-            context.append(tx_to_conf(scenario, *tx, internals, encode_fn))
+            context.append(tx_to_jraph(scenario, *tx, internals, encode_fn))
             internals_ctx.append(internals)
 
         for step in trange(n_steps, desc='Steps'):

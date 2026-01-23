@@ -1,8 +1,47 @@
+from itertools import combinations
+
 import jax
 import jax.numpy as jnp
 import jraph
+import networkx as nx
+import numpy as np
+from mapc_sim.constants import DEFAULT_TX_POWER
 
-from lai4wifi.graphs.attributes import Connection
+from lai4wifi.graphs.attributes import *
+
+
+CCA_THRESHOLD = -82.0
+RSSI_MEAN = -60.0
+RSSI_STD = 20.0
+RSSI_THR = (CCA_THRESHOLD - RSSI_MEAN) / RSSI_STD
+
+
+def conf_to_nx(scenario, configuration):
+    G = nx.Graph()
+    
+    distance = np.sqrt(np.sum((scenario.pos[:, None, :] - scenario.pos[None, ...]) ** 2, axis=-1))
+    path_loss = scenario.path_loss_fn(distance, scenario.walls)
+
+    for ap, stas in scenario.associations.items():
+        for sta in stas:
+            if not isinstance(sta, int):
+                sta = sta.item()
+
+            rssi = (DEFAULT_TX_POWER - path_loss[ap, sta] - RSSI_MEAN) / RSSI_STD
+            G.add_edge(ap, sta, active=IsActive.TRUE, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.FALSE, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.STA)
+
+    for link in configuration.links:
+        G.edges[(link.ap, link.sta)]['mcs'] = McsValue(link.mcs)
+        G.edges[(link.ap, link.sta)]['selected'] = IsSelected.TRUE
+        G.edges[(link.ap, link.sta)]['success'] = link.success
+        G.edges[(link.ap, link.sta)]['tx_power'] = TxPowerValue(link.tx_power)
+
+    for ap_1, ap_2 in combinations(scenario.associations.keys(), r=2):
+        rssi = (DEFAULT_TX_POWER - path_loss[ap_1, ap_2] - RSSI_MEAN) / RSSI_STD
+        if rssi > RSSI_THR:
+            G.add_edge(ap_1, ap_2, active=IsActive.NA, mcs=McsValue.NA, rssi=rssi, selected=IsSelected.NA, success=0.0, tx_power=TxPowerValue.NA, type=EdgeType.AP)
+
+    return G
 
 
 def nearest_power_of_two(n):

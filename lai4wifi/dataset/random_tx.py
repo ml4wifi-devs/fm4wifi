@@ -11,12 +11,15 @@ from lai4wifi.flow_matching.utils import random_tx
 
 def draw_configuration(n_configurations, key, dataset_item):
     for _ in range(n_configurations):
-        key, subkey = jax.random.split(key)
-        tx, tx_power, mcs = random_tx(subkey, dataset_item.scenario)
+        key, random_key, scenario_key = jax.random.split(key, 3)
+        tx, tx_power, mcs = random_tx(random_key, dataset_item.scenario)
+        _, _, internals = dataset_item.scenario(scenario_key, tx, tx_power, mcs, return_internals=True)
+        succ_prob = (internals.frames_transmitted / np.maximum(internals.ampdu_size, 1))
         ap, sta = np.where(tx)
         mcs = [mcs[a].item() for a in ap]
         tx_power = [tx_power[a].item() for a in ap]
-        yield Configuration([TxPair(a, s, m, t) for a, s, m, t in zip(ap, sta, mcs, tx_power)])
+        succ_prob = [succ_prob[a].item() for a in ap]
+        yield Configuration([TxPair(a, s, m, t, p) for a, s, m, t, p in zip(ap, sta, mcs, tx_power, succ_prob)])
 
 
 if __name__ == '__main__':

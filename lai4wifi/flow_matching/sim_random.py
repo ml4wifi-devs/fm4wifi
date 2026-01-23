@@ -14,7 +14,7 @@ from omegaconf import OmegaConf
 from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.sim import eval_with_sim, eval_with_surrogate
-from lai4wifi.flow_matching.utils import TEST_SCENARIOS, random_tx, tx_to_action, tx_to_conf
+from lai4wifi.flow_matching.utils import TEST_SCENARIOS, random_tx, tx_to_action, tx_to_jraph
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 from lai4wifi.surrogate.model import SurrogateModel
@@ -41,7 +41,7 @@ def run_scenario(
                 rand_key, tx_key, sim_key = jax.random.split(rand_key, 3)
                 tx = random_tx(tx_key, scenario)
                 _, _, internals = scenario(sim_key, *tx, return_internals=True)
-                graphs.append(tx_to_conf(scenario, *tx, internals, encode_fn, add_success=False))
+                graphs.append(tx_to_jraph(scenario, *tx, internals, encode_fn, add_success=False))
 
             z_eval = make_batch(graphs)
             configs = decode_fn(z_eval)

@@ -36,10 +36,12 @@ def draw_configuration(n_configurations, key, dataset_item, n_steps=2000):
         key, scenario_key = jax.random.split(key)
         tx, tx_power = agent.sample(reward)
         _, reward, internals = dataset_item.scenario(scenario_key, tx, tx_power, return_internals=True)
+        succ_prob = (internals.frames_transmitted / np.maximum(internals.ampdu_size, 1))
         ap, sta = np.where(tx)
         mcs = [internals.mcs[a].item() for a in ap]
         tx_power = [tx_power[a].item() for a in ap]
-        tx_pairs.append([TxPair(a, s, m, t) for a, s, m, t in zip(ap, sta, mcs, tx_power)])
+        succ_prob = [succ_prob[a].item() for a in ap]
+        tx_pairs.append([TxPair(a, s, m, t, p) for a, s, m, t, p in zip(ap, sta, mcs, tx_power, succ_prob)])
 
     tx_pairs = tx_pairs[n_steps // 2:]  # configurations after convergence
     idxs = jax.random.choice(key, len(tx_pairs), shape=(n_configurations,), replace=False)

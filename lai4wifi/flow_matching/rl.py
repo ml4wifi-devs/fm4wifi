@@ -21,7 +21,7 @@ from tqdm import trange
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example
-from lai4wifi.flow_matching.utils import connections_to_tx, gen_sample, random_tx, tx_to_action, tx_to_conf
+from lai4wifi.flow_matching.utils import connections_to_tx, gen_sample, random_tx, tx_to_action, tx_to_jraph
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 
@@ -163,7 +163,7 @@ def main(cfg):
             gen_key, tx_key, sim_key = jax.random.split(gen_key, 3)
             tx = random_tx(tx_key, scenario)
             data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
-            context.append(tx_to_conf(scenario, *tx, internals, encode_fn))
+            context.append(tx_to_jraph(scenario, *tx, internals, encode_fn))
             target_rate = data_rate.item()
 
         all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context)

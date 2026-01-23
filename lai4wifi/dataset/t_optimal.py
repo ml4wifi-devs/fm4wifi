@@ -1,5 +1,6 @@
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'False'
+os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 
 from itertools import chain
 
