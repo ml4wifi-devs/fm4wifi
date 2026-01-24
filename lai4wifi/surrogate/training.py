@@ -18,6 +18,7 @@ from omegaconf import OmegaConf
 
 from lai4wifi.dataset.utils import load_dataset
 from lai4wifi.surrogate.model import SurrogateModel
+from lai4wifi.surrogate.utils import RATE_MEAN, RATE_STD, calculate_data_rate
 from lai4wifi.graphs.utils import make_batch
 
 
@@ -38,8 +39,11 @@ def load(dataset_path, batch_size, key, val):
                 continue
 
             config_idx = jax.random.choice(config_key, len(datasets[dataset_idx].configurations))
-            graph, rate = datasets[dataset_idx].configurations[config_idx]
+            graph = datasets[dataset_idx].configurations[config_idx]
             graph_batch.append(graph)
+            
+            rate = calculate_data_rate(graph)
+            rate = (rate - RATE_MEAN) / RATE_STD
             rate_batch.append(rate)
 
         yield make_batch(graph_batch), np.asarray(rate_batch + [0.0])
@@ -66,9 +70,27 @@ def main(cfg):
         loss = (mask * loss).sum() / mask.sum()
         return loss, pred
 
+    def mdn_loss(logits, means, scales, rates):
+        """Mixture Density Network https://research.aston.ac.uk/en/publications/mixture-density-networks"""
+        log_probs_pi = jax.nn.log_softmax(logits, axis=-1)
+        log_probs_gauss = -0.5 * jnp.log(2 * jnp.pi) - jnp.log(scales) - 0.5 * ((rates[..., None] - means) / scales) ** 2
+        log_probs_total = log_probs_pi + log_probs_gauss
+        return -jax.nn.logsumexp(log_probs_total, axis=-1)
+
+    @jax.jit
+    def mdn_loss_fn(params, key, batch, rates):
+        logits, means, scales = model.apply(params, batch, rngs=key)
+        probs = jax.nn.softmax(logits, axis=-1)
+        expected_value = jnp.sum(probs * means, axis=-1)        
+        
+        mask = jraph.get_graph_padding_mask(batch)
+        loss = mdn_loss(logits, means, scales, rates)
+        loss = (mask * loss).sum() / mask.sum()
+        return loss, expected_value
+
     @jax.jit
     def step_fn(params, opt_state, key, batch, rates):
-        (loss, pred), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, key, batch, rates)
+        (loss, pred), grads = jax.value_and_grad(mdn_loss_fn, has_aux=True)(params, key, batch, rates)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss, pred
@@ -117,7 +139,7 @@ def main(cfg):
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch, val_rates = next(val_data)
-                loss, pred = loss_fn(params, subkey, val_batch, val_rates)
+                loss, pred = mdn_loss_fn(params, subkey, val_batch, val_rates)
                 val_loss += loss.item()
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps

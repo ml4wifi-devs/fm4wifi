@@ -13,6 +13,7 @@ class SurrogateModel(nn.Module):
     ff_dim: int
     n_layers: int
     n_heads: int
+    n_components: int
     drop_rate: float
     embed_features: None
     dtype: jnp.dtype
@@ -37,5 +38,8 @@ class SurrogateModel(nn.Module):
                 aggregate_edges_for_globals_fn=segment_mean
             )(x)
 
-        x = jraph.GraphMapFeatures(embed_global_fn=make_embed_fn(1, self.dtype))(x)
-        return x.globals.squeeze(-1)
+        x = jraph.GraphMapFeatures(embed_global_fn=make_embed_fn(self.n_components * 3, self.dtype))(x)
+
+        logits, means, raw_scales = jnp.split(x.globals, 3, axis=-1)
+        scales = nn.softplus(raw_scales) + 1e-4
+        return logits, means, scales
