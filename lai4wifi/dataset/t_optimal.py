@@ -36,9 +36,9 @@ def draw_configuration(n_configurations, key, dataset_item):
     idx_to_conf = {i: conf for i, conf in enumerate(configurations['links'])}
 
     for _ in range(n_configurations):
-        key, subkey = jax.random.split(key)
-        idx = jax.random.choice(subkey, len(shares), p=shares).item()
-        yield peek_configuration(configurations, idx_to_conf[idx])
+        key, random_key, conf_key = jax.random.split(key, 3)
+        idx = jax.random.choice(random_key, len(shares), p=shares).item()
+        yield peek_configuration(configurations, idx_to_conf[idx], dataset_item, conf_key)
 
 
 if __name__ == '__main__':
