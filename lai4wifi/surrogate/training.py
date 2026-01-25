@@ -4,6 +4,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
+from dataclasses import replace
 from glob import glob
 
 import hydra
@@ -44,7 +45,7 @@ def load(dataset_path, batch_size, key, val):
             rate = calculate_data_rate(graph)
             rate = (rate - RATE_MEAN) / RATE_STD
             
-            graph = graph._replace(edges=graph.edges._replace(success=jnp.zeros_like(graph.edges.success)))
+            graph = graph._replace(edges=replace(graph.edges, success=jnp.zeros_like(graph.edges.success)))
             graph_batch.append(graph)
             rate_batch.append(rate)
 
