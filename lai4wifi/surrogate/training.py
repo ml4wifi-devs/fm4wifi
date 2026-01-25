@@ -40,10 +40,12 @@ def load(dataset_path, batch_size, key, val):
 
             config_idx = jax.random.choice(config_key, len(datasets[dataset_idx].configurations))
             graph = datasets[dataset_idx].configurations[config_idx]
-            graph_batch.append(graph)
             
             rate = calculate_data_rate(graph)
             rate = (rate - RATE_MEAN) / RATE_STD
+            
+            graph = graph._replace(edges=graph.edges._replace(success=jnp.zeros_like(graph.edges.success)))
+            graph_batch.append(graph)
             rate_batch.append(rate)
 
         yield make_batch(graph_batch), np.asarray(rate_batch + [0.0])
