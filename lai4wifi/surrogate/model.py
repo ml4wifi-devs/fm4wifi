@@ -24,7 +24,7 @@ class SurrogateModel(nn.Module):
             self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, segment_ids, training=training
         )
 
-        edge_segment_ids = compute_segment_ids(x.n_edge, x.edges.shape[0])
+        edge_segment_ids = compute_segment_ids(x.n_edge, x.edges.active.shape[0])
         node_segment_ids = compute_segment_ids(x.n_node, x.nodes.shape[0])
         global_segment_ids = jnp.arange(x.n_node.shape[0])
 

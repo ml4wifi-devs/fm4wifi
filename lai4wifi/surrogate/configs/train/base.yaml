@@ -8,5 +8,5 @@ val:
   n_steps: 10
   freq: 50
 batch_size: 32
-n_steps: 3000
+n_steps: 5000
 seed: 42
