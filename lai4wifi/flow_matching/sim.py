@@ -48,8 +48,8 @@ def eval_with_surrogate(scenario, configs, key, surrogate_fn):
     graphs = make_batch(graphs)
     pred = surrogate_fn(graphs)
 
-    mask = jraph.get_graph_padding_mask(graphs)[..., None]
-    pred = jax.tree.map(lambda x: jnp.where(mask, x, -jnp.inf), pred)
+    mask = jraph.get_graph_padding_mask(graphs)
+    pred = jax.tree.map(lambda x: x[mask], pred)
     best_idx, scores = select_best_configuration(*pred)
     
     best_zt = jraph.unbatch(graphs)[best_idx]
