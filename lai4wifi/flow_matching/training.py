@@ -19,16 +19,24 @@ from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.mmd import compute_mmd
-from lai4wifi.flow_matching.utils import gen_sample
+from lai4wifi.flow_matching.utils import gen_sample, random_tx, tx_to_jraph
 from lai4wifi.graphs.dataset import load_dataset
+from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 
 
-def draw_configurations(dataset_item, n_timesteps, key):
-    *context_idxs, target_idx = jax.random.choice(key, len(dataset_item.configurations), (n_timesteps + 1,))
-
-    context = [dataset_item.configurations[i] for i in context_idxs]
+def draw_configurations(dataset_item, n_timesteps, key, encode_fn):
+    idx_key, *ctx_keys = jax.random.split(key, n_timesteps + 2)
+    
+    target_idx = jax.random.choice(idx_key, len(dataset_item.configurations))
     target_conf = dataset_item.configurations[target_idx]
+    
+    context = []
+    for i in range(n_timesteps):
+        tx_key, sim_key = jax.random.split(ctx_keys[i])
+        tx_params = random_tx(tx_key, dataset_item.scenario)
+        _, _, internals = dataset_item.scenario(sim_key, *tx_params, return_internals=True)
+        context.append(tx_to_jraph(dataset_item.scenario, *tx_params, internals, encode_fn))
 
     all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context, target_conf)
     return target_conf._replace(
@@ -38,7 +46,7 @@ def draw_configurations(dataset_item, n_timesteps, key):
     )
 
 
-def load(dataset_path, batch_size, n_timesteps, key, val):
+def load(dataset_path, batch_size, n_timesteps, key, val, encode_fn):
     dataset_paths = glob(f'{dataset_path}/*.pkl.lz4')
     dataset_paths = filter(lambda p: ('val' in p) == val, dataset_paths)
     dataset = sum((load_dataset(path) for path in dataset_paths), start=[])
@@ -51,13 +59,13 @@ def load(dataset_path, batch_size, n_timesteps, key, val):
             key, idx_key, conf_key = jax.random.split(key, 3)
             idx = jax.random.choice(idx_key, len(dataset))
 
-            if len(dataset[idx].configurations) < n_timesteps + 1:
+            if len(dataset[idx].configurations) == 0:
                 continue
             
             graph_size = dataset[idx].configurations[0].edges.shape[0]
 
             if edges + graph_size < batch_size:
-                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key))
+                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, encode_fn))
                 edges += graph_size
             elif edges == 0:
                 continue
@@ -133,8 +141,15 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, mmd_key, data_key, val_data_key = jax.random.split(key, 6)
 
-    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, data_key, val=False)
-    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, val=True))
+    gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
+    with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
+        gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+    
+    gnn = GnnAutoencoder(**gnn_cfg.model)
+    encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
+
+    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, data_key, val=False, encode_fn=encode_fn)
+    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, val=True, encode_fn=encode_fn))
     sample = next(iter(data))
     sample = (sample, jnp.zeros((sample.edges.shape[0], 1)))
 

@@ -146,7 +146,8 @@ def main(cfg):
         options=ocp.CheckpointManagerOptions(max_to_keep=None if cfg.train.ckpt.intermediate else 1, create=True),
         item_names=['ema_params', 'params_old', 'opt_state']
     )
-    OmegaConf.save(config=cfg, f=os.path.join(ckpt_path, 'config.yaml'))
+    OmegaConf.save(config=cfg, f=os.path.join(ckpt_path, 'rl_config.yaml'))
+    OmegaConf.save(config=fm_cfg, f=os.path.join(ckpt_path, 'config.yaml'))
 
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
