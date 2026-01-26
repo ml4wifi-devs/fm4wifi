@@ -17,7 +17,7 @@ from tqdm import tqdm, trange
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.utils import TEST_SCENARIOS, connections_to_tx, tx_to_action, tx_to_jraph, random_tx
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch
+from lai4wifi.graphs.utils import make_batch, unbatch
 from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.surrogate.utils import select_best_configuration
 
@@ -25,7 +25,7 @@ from lai4wifi.surrogate.utils import select_best_configuration
 def eval_with_sim(scenario, configs, key):
     best, best_val = None, float('-inf')
 
-    for zt in jraph.unbatch(configs):
+    for zt in unbatch(configs):
         key, tx_key, scenario_key = jax.random.split(key, 3)
         tx = connections_to_tx(scenario.associations, tx_key, zt)
         data_rate, _ = scenario(scenario_key, *tx, return_internals=False)
@@ -38,12 +38,13 @@ def eval_with_sim(scenario, configs, key):
 
 
 def eval_with_surrogate(scenario, configs, key, surrogate_fn):
-    graphs = []
+    graphs, txs = [], []
 
-    for zt in jraph.unbatch(configs):
+    for zt in unbatch(configs):
         key, tx_key = jax.random.split(key)
         tx = connections_to_tx(scenario.associations, tx_key, zt)
         graphs.append(tx_to_jraph(scenario, *tx))
+        txs.append(tx)
 
     graphs = make_batch(graphs)
     pred = surrogate_fn(graphs)
@@ -52,10 +53,7 @@ def eval_with_surrogate(scenario, configs, key, surrogate_fn):
     pred = jax.tree.map(lambda x: x[mask], pred)
     best_idx, scores = select_best_configuration(*pred)
     
-    best_zt = jraph.unbatch(graphs)[best_idx]
-    best = connections_to_tx(scenario.associations, key, best_zt)
-    
-    return best
+    return txs[best_idx.item()]
 
 
 def run_scenario(
@@ -91,7 +89,7 @@ def run_scenario(
             internals = internals_ctx[step + n_timesteps - 1]
 
             # https://arxiv.org/abs/2412.08296
-            x_eval = jraph.batch([x for _ in range(n_samples_eval)])
+            x_eval = make_batch([x for _ in range(n_samples_eval)])
             z_eval = gen_fn(x_eval, rngs=fm_key)
             configs = decode_fn(z_eval)
 
@@ -136,7 +134,7 @@ if __name__ == '__main__':
         surrogate_fn = None
 
     fm_cfg = OmegaConf.load(os.path.join(args.checkpoint, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(cfg.fm_path), item_names=['ema_params']) as ckpt_manager:
+    with ocp.CheckpointManager(os.path.abspath(args.checkpoint), item_names=['ema_params']) as ckpt_manager:
         fm_params = ckpt_manager.restore(None, args=ocp.args.Composite(ema_params=ocp.args.PyTreeRestore())).ema_params
 
     fm = FlowMatching(**fm_cfg.model)

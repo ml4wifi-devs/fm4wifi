@@ -22,7 +22,7 @@ def connections_to_tx(associations, key, graph):
     selected_idxs = defaultdict(list)
     
     ap_sta_edge = np.argmax(graph.edges.type, axis=-1) == EdgeType.STA.value
-    not_na = graph.edges.selected[:, -1] < 0.5
+    not_na = graph.edges.selected[:, -1] < 0
     selected = np.argmax(graph.edges.selected[:, :-1], axis=-1) == IsSelected.TRUE.value
     idxs = np.where(ap_sta_edge & not_na & selected)[0]
 
@@ -44,10 +44,12 @@ def connections_to_tx(associations, key, graph):
         selected_for_tx.append(sta_indices[selected_sta_idx])
 
     for idx in selected_for_tx:
+        key, power_key, mcs_key = jax.random.split(key, 3)
         ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
         tx_matrix[ap, sta] = 1
-        tx_power[ap] = np.argmax(graph.edges.tx_power[idx, :-1])
-        mcs[ap] = np.argmax(graph.edges.mcs[idx, :-1])
+        tx_power[ap] = jax.random.categorical(power_key, graph.edges.tx_power[idx, :-1])
+        mcs[ap] = jax.random.categorical(mcs_key, graph.edges.mcs[idx, :-1])
+        
 
     return tx_matrix, tx_power, mcs
 

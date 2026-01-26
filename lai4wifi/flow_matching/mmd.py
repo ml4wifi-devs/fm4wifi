@@ -35,7 +35,7 @@ def median_heuristic(x, y=None):
 
 @jax.jit
 def compute_mmd(x, y, x_mask, y_mask, gammas=None):
-    n, m = x.shape[0], y.shape[0]
+    n, m = x_mask.sum(), y_mask.sum()
 
     if gammas is None:
         combined = jnp.concatenate([x, y], axis=0)
