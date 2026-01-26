@@ -34,7 +34,7 @@ def median_heuristic(x, y=None):
 
 
 @jax.jit
-def compute_mmd(x, y, gammas=None):
+def compute_mmd(x, y, x_mask, y_mask, gammas=None):
     n, m = x.shape[0], y.shape[0]
 
     if gammas is None:
@@ -48,9 +48,9 @@ def compute_mmd(x, y, gammas=None):
     K_yy = multiscale_rbf_kernel(y, y, gammas)
     K_xy = multiscale_rbf_kernel(x, y, gammas)
 
-    sum_K_xx = jnp.sum(K_xx) - jnp.trace(K_xx)
-    sum_K_yy = jnp.sum(K_yy) - jnp.trace(K_yy)
-    sum_K_xy = jnp.sum(K_xy)
+    sum_K_xx = jnp.sum(K_xx * x_mask[:, None] * x_mask) - jnp.sum(jnp.diag(K_xx) * x_mask)
+    sum_K_yy = jnp.sum(K_yy * y_mask[:, None] * y_mask) - jnp.sum(jnp.diag(K_yy) * y_mask)
+    sum_K_xy = jnp.sum(K_xy * x_mask[:, None] * y_mask)
 
     mmd_sq = sum_K_xx / (n * (n - 1)) + sum_K_yy / (m * (m - 1)) - 2 * sum_K_xy / (n * m)
     return jnp.sqrt(jnp.maximum(mmd_sq, 0.0))

@@ -128,11 +128,11 @@ def main(cfg):
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
-    @jax.jit
+    @partial(jax.jit, static_argnames=['n_samples'])
     def mmd_fn(params, batch, key, n_samples):
         def _mmd(params, batch, mask, key):
             generated = model.apply(params, gen_sample(batch), method='gen', rngs=key)
-            return compute_mmd(batch.edges[:, -1][mask], generated.edges[mask]).item()
+            return compute_mmd(batch.edges[:, -1], generated.edges, mask, mask)
 
         mask = jraph.get_edge_padding_mask(batch)
         mmds = jax.vmap(_mmd, in_axes=(None, None, None, 0))(params, batch, mask, jax.random.split(key, n_samples))
@@ -207,8 +207,8 @@ def main(cfg):
             mmd_val = mmd_fn(params, mmd_batch, mmd_subkey, cfg.train.mmd.n_samples)
             mmd_val_ema = mmd_fn(ema_params, mmd_batch, mmd_ema_subkey, cfg.train.mmd.n_samples)
             
-            log_dict['val/mmd'] = mmd_val
-            log_dict['val/mmd_ema'] = mmd_val_ema
+            log_dict['val/mmd'] = mmd_val.item()
+            log_dict['val/mmd_ema'] = mmd_val_ema.item()
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
             logging.info(log_dict)

@@ -9,9 +9,9 @@ val:
   freq: 100
 mmd:
   enabled: true
-  freq: 500
+  freq: 200
   n_samples: 5
 batch_size: 512
-n_steps: 4000
+n_steps: 5000
 n_timesteps: 7
 seed: 42
