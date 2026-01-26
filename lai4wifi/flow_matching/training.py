@@ -49,6 +49,7 @@ def draw_configurations(dataset_item, n_timesteps, key, encode_fn):
 def load(dataset_path, batch_size, n_timesteps, key, val, encode_fn):
     dataset_paths = glob(f'{dataset_path}/*.pkl.lz4')
     dataset_paths = filter(lambda p: ('val' in p) == val, dataset_paths)
+    dataset_paths = filter(lambda p: 'random' not in p, dataset_paths)
     dataset = sum((load_dataset(path) for path in dataset_paths), start=[])
 
     while True:
@@ -127,16 +128,15 @@ def main(cfg):
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
-    def compute_mmd_for_batch(params, batch, key, n_samples):
+    @jax.jit
+    def mmd_fn(params, batch, key, n_samples):
+        def _mmd(params, batch, mask, key):
+            generated = model.apply(params, gen_sample(batch), method='gen', rngs=key)
+            return compute_mmd(batch.edges[:, -1][mask], generated.edges[mask]).item()
+
         mask = jraph.get_edge_padding_mask(batch)
-        mmd_sum = 0.0
-
-        for _ in range(n_samples):
-            key, gen_key = jax.random.split(key)
-            generated = model.apply(params, gen_sample(batch), method='gen', rngs=gen_key)
-            mmd_sum += compute_mmd(batch.edges[:, -1][mask], generated.edges[mask]).item()
-
-        return mmd_sum / n_samples
+        mmds = jax.vmap(_mmd, in_axes=(None, None, None, 0))(params, batch, mask, jax.random.split(key, n_samples))
+        return mmds.mean()
 
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key, mmd_key, data_key, val_data_key = jax.random.split(key, 6)
@@ -204,8 +204,8 @@ def main(cfg):
             mmd_key, mmd_subkey, mmd_ema_subkey = jax.random.split(mmd_key, 3)
             mmd_batch = next(val_data)
             
-            mmd_val = compute_mmd_for_batch(params, mmd_batch, mmd_subkey, cfg.train.mmd.n_samples)
-            mmd_val_ema = compute_mmd_for_batch(ema_params, mmd_batch, mmd_ema_subkey, cfg.train.mmd.n_samples)
+            mmd_val = mmd_fn(params, mmd_batch, mmd_subkey, cfg.train.mmd.n_samples)
+            mmd_val_ema = mmd_fn(ema_params, mmd_batch, mmd_ema_subkey, cfg.train.mmd.n_samples)
             
             log_dict['val/mmd'] = mmd_val
             log_dict['val/mmd_ema'] = mmd_val_ema
