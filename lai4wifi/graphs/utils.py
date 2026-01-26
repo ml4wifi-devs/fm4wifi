@@ -68,13 +68,13 @@ def unbatch(batched_graph):
 
 
 def nx_to_jraph(G):
-    edges, senders, receivers = zip(*[[jax.tree.map(jnp.atleast_1d, Connection(**data)), u, v] for u, v, data in G.edges(data=True)])
+    edges, senders, receivers = zip(*[[jax.tree.map(np.atleast_1d, Connection(**data)), u, v] for u, v, data in G.edges(data=True)])
     senders, receivers = senders + receivers, receivers + senders
     edges += edges
 
     return jraph.GraphsTuple(
         nodes=jnp.empty((len(G.nodes), 0), dtype=jnp.float64),
-        edges=jax.tree.map(lambda *args: jnp.stack(args).astype(jnp.float64), *edges),
+        edges=jax.tree.map(lambda *args: jnp.asarray(np.stack(args, dtype=np.float64)), *edges),
         receivers=jnp.asarray(receivers),
         senders=jnp.asarray(senders),
         globals=None,

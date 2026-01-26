@@ -20,16 +20,14 @@ TEST_SCENARIOS = [
 def connections_to_tx(associations, key, graph):
     n_nodes = len(associations) + sum(len(stas) for stas in associations.values())
     selected_idxs = defaultdict(list)
-    connections = graph.edges
+    
+    ap_sta_edge = np.argmax(graph.edges.type, axis=-1) == EdgeType.STA.value
+    not_na = graph.edges.selected[:, -1] < 0.5
+    selected = np.argmax(graph.edges.selected[:, :-1], axis=-1) == IsSelected.TRUE.value
+    idxs = np.where(ap_sta_edge & not_na & selected)[0]
 
-    for idx in range(graph.n_edge[0]):
-        ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
-
-        ap_sta_edge = ap in associations and sta in associations[ap]
-        not_na = connections.selected[idx, -1] < 0.5
-        selected = np.argmax(connections.selected[idx, :-1]) == IsSelected.TRUE.value
-        
-        if ap_sta_edge and not_na and selected:
+    for idx in idxs:
+        if (ap := graph.senders[idx].item()) in associations:
             selected_idxs[ap].append(idx)
 
     tx_matrix = np.zeros((n_nodes, n_nodes), dtype=int)
@@ -48,8 +46,8 @@ def connections_to_tx(associations, key, graph):
     for idx in selected_for_tx:
         ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
         tx_matrix[ap, sta] = 1
-        tx_power[ap] = np.argmax(connections.tx_power[idx, :-1])
-        mcs[ap] = np.argmax(connections.mcs[idx, :-1])
+        tx_power[ap] = np.argmax(graph.edges.tx_power[idx, :-1])
+        mcs[ap] = np.argmax(graph.edges.mcs[idx, :-1])
 
     return tx_matrix, tx_power, mcs
 

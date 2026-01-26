@@ -2,7 +2,6 @@ import enum
 from dataclasses import dataclass
 
 import jax
-import jax.numpy as jnp
 
 
 @jax.tree_util.register_dataclass
@@ -20,7 +19,7 @@ class Connection:
 @jax.tree_util.register_pytree_node_class
 class JaxEnum(enum.Enum):
     def __jax_array__(self):
-        return jax.nn.one_hot(jnp.asarray(self.value), len(type(self)))
+        return jax.nn.one_hot(self.value, len(type(self)))
 
     def __init_subclass__(cls) -> None:
         jax.tree_util.register_pytree_node_class(cls)
