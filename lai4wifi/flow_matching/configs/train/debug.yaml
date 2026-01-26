@@ -7,6 +7,10 @@ log:
 val:
   n_steps: 2
   freq: 5
+mmd:
+  enabled: true
+  freq: 500
+  n_samples: 5
 batch_size: 64
 n_steps: 1000
 n_timesteps: 3

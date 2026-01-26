@@ -120,8 +120,8 @@ def main(cfg):
     dataset_key, train_key = jax.random.split(key)
 
     fm_cfg = OmegaConf.load(os.path.join(cfg.fm_path, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(cfg.fm_path), item_names=['params']) as ckpt_manager:
-        fm_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+    with ocp.CheckpointManager(os.path.abspath(cfg.fm_path), item_names=['ema_params']) as ckpt_manager:
+        fm_params = ckpt_manager.restore(None, args=ocp.args.Composite(ema_params=ocp.args.PyTreeRestore())).ema_params
 
     fm = FlowMatching(**fm_cfg.model)
 
@@ -144,7 +144,7 @@ def main(cfg):
     ckpt_manager = ocp.CheckpointManager(
         directory=ckpt_path,
         options=ocp.CheckpointManagerOptions(max_to_keep=None if cfg.train.ckpt.intermediate else 1, create=True),
-        item_names=['params', 'params_old', 'opt_state']
+        item_names=['ema_params', 'params_old', 'opt_state']
     )
     OmegaConf.save(config=cfg, f=os.path.join(ckpt_path, 'config.yaml'))
 
@@ -222,7 +222,7 @@ def main(cfg):
 
         if step % cfg.train.ckpt.freq == 0 or step == cfg.train.n_steps - 1:
             ckpt_manager.save(step, args=ocp.args.Composite(
-                params=ocp.args.PyTreeSave(fm_params),
+                ema_params=ocp.args.PyTreeSave(fm_params),
                 params_old=ocp.args.PyTreeSave(fm_params_old),
                 opt_state=ocp.args.PyTreeSave(opt_state)
             ))

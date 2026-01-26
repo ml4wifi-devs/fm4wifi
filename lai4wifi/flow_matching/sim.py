@@ -136,8 +136,8 @@ if __name__ == '__main__':
         surrogate_fn = None
 
     fm_cfg = OmegaConf.load(os.path.join(args.checkpoint, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(args.checkpoint), item_names=['params']) as ckpt_manager:
-        fm_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+    with ocp.CheckpointManager(os.path.abspath(cfg.fm_path), item_names=['ema_params']) as ckpt_manager:
+        fm_params = ckpt_manager.restore(None, args=ocp.args.Composite(ema_params=ocp.args.PyTreeRestore())).ema_params
 
     fm = FlowMatching(**fm_cfg.model)
     gen_fn = jax.jit(partial(fm.apply, fm_params, method='gen'))

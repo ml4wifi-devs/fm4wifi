@@ -4,6 +4,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
+from copy import deepcopy
 from functools import partial
 from glob import glob
 
@@ -17,6 +18,8 @@ import wandb
 from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
+from lai4wifi.flow_matching.mmd import compute_mmd
+from lai4wifi.flow_matching.utils import gen_sample
 from lai4wifi.graphs.dataset import load_dataset
 from lai4wifi.graphs.utils import make_batch
 
@@ -116,8 +119,19 @@ def main(cfg):
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
+    def compute_mmd_for_batch(params, batch, key, n_samples):
+        mask = jraph.get_edge_padding_mask(batch)
+        mmd_sum = 0.0
+
+        for _ in range(n_samples):
+            key, gen_key = jax.random.split(key)
+            generated = model.apply(params, gen_sample(batch), method='gen', rngs=gen_key)
+            mmd_sum += compute_mmd(batch.edges[:, -1][mask], generated.edges[mask]).item()
+
+        return mmd_sum / n_samples
+
     key = jax.random.PRNGKey(cfg.train.seed)
-    init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
+    init_key, train_key, val_key, mmd_key, data_key, val_data_key = jax.random.split(key, 6)
 
     data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, data_key, val=False)
     val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, val=True))
@@ -126,6 +140,7 @@ def main(cfg):
 
     model = FlowMatching(**cfg.model)
     params = model.init({'params': init_key}, *sample)
+    ema_params = deepcopy(params)
     print(model.tabulate(jax.random.PRNGKey(0), *sample))
 
     lr = optax.cosine_onecycle_schedule(cfg.train.n_steps, cfg.optimizer.learning_rate, pct_start=0.1)
@@ -139,7 +154,7 @@ def main(cfg):
     ckpt_manager = ocp.CheckpointManager(
         directory=ckpt_path,
         options=ocp.CheckpointManagerOptions(max_to_keep=None if cfg.train.ckpt.intermediate else 1, create=True),
-        item_names=['params', 'opt_state', 'train_key', 'val_key']
+        item_names=['params', 'ema_params', 'opt_state', 'train_key', 'val_key']
     )
     OmegaConf.save(config=cfg, f=os.path.join(ckpt_path, 'config.yaml'))
 
@@ -151,20 +166,34 @@ def main(cfg):
 
         train_key, subkey = jax.random.split(train_key)
         params, opt_state, loss = step_fn(params, opt_state, subkey, batch)
+        ema_params = optax.incremental_update(params, ema_params, 1.0 - cfg.optimizer.ema_decay)
 
         log_dict['step'] = step
         log_dict['train/loss'] = loss.item()
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
-            val_loss = 0.0
+            val_loss, val_loss_ema = 0.0, 0.0
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch = next(val_data)
                 loss = loss_fn(params, subkey, val_batch)
+                loss_ema = loss_fn(ema_params, subkey, val_batch)
                 val_loss += loss.item()
+                val_loss_ema += loss_ema.item()
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
+            log_dict['val/loss_ema'] = val_loss_ema / cfg.train.val.n_steps
+
+        if cfg.train.mmd.enabled and (step % cfg.train.mmd.freq == 0 or step == cfg.train.n_steps - 1):
+            mmd_key, mmd_subkey, mmd_ema_subkey = jax.random.split(mmd_key, 3)
+            mmd_batch = next(val_data)
+            
+            mmd_val = compute_mmd_for_batch(params, mmd_batch, mmd_subkey, cfg.train.mmd.n_samples)
+            mmd_val_ema = compute_mmd_for_batch(ema_params, mmd_batch, mmd_ema_subkey, cfg.train.mmd.n_samples)
+            
+            log_dict['val/mmd'] = mmd_val
+            log_dict['val/mmd_ema'] = mmd_val_ema
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
             logging.info(log_dict)
@@ -174,6 +203,7 @@ def main(cfg):
         if step % cfg.train.ckpt.freq == 0 or step == cfg.train.n_steps - 1:
             ckpt_manager.save(step, args=ocp.args.Composite(
                 params=ocp.args.PyTreeSave(params),
+                ema_params=ocp.args.PyTreeSave(ema_params),
                 opt_state=ocp.args.PyTreeSave(opt_state),
                 train_key=ocp.args.JaxRandomKeySave(train_key),
                 val_key=ocp.args.JaxRandomKeySave(val_key)
