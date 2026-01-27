@@ -27,7 +27,8 @@ def connections_to_tx(associations, key, graph):
     idxs = np.where(ap_sta_edge & not_na & selected)[0]
 
     for idx in idxs:
-        if (ap := graph.senders[idx].item()) in associations:
+        ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
+        if ap in associations and sta in associations[ap]:
             selected_idxs[ap].append(idx)
 
     tx_matrix = np.zeros((n_nodes, n_nodes), dtype=int)
@@ -84,7 +85,6 @@ def random_tx(key, scenario):
 
 def tx_to_conf(tx, tx_power, mcs, internals):
     ap, sta = np.where(tx)
-    ap, sta = ap.tolist(), sta.tolist()
     mcs = [mcs[a].item() for a in ap]
     tx_power = [tx_power[a].item() for a in ap]
     
