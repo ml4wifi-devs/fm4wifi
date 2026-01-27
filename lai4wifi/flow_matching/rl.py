@@ -151,6 +151,17 @@ def main(cfg):
 
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
+    
+    eval_ctx = []
+
+    for _ in range(fm_cfg.train.n_timesteps):
+        dataset_key, tx_key, sim_key = jax.random.split(dataset_key, 3)
+        eval_tx = random_tx(tx_key, EVAL_SCENARIO)
+        _, _, eval_internals = EVAL_SCENARIO(sim_key, *eval_tx, return_internals=True)
+        eval_ctx.append(tx_to_jraph(EVAL_SCENARIO, *eval_tx, eval_internals, encode_fn))
+
+    eval_ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *eval_ctx)
+    eval_ctx = eval_ctx[0]._replace(edges=eval_ctx.edges, nodes=eval_ctx.nodes, globals=eval_ctx.globals)
 
     all_ctx, all_rewards = [], []
 
@@ -177,7 +188,7 @@ def main(cfg):
     Z_c = all_rewards.std()
 
     for step in trange(cfg.train.n_steps, desc='Training steps'):
-        train_key, sample_key, step_key, eval_key = jax.random.split(train_key, 4)
+        train_key, sample_key, step_key, dataset_key = jax.random.split(train_key, 4)
         
         idxs = jax.random.choice(sample_key, len(all_ctx), shape=(cfg.train.nft.n_samples,), replace=False)
         xs = [all_ctx[idx] for idx in idxs]
@@ -204,8 +215,8 @@ def main(cfg):
 
         fm_params_old = optax.incremental_update(fm_params, fm_params_old, step_size=max(1 - step / cfg.train.n_steps, 0.5))
 
-        fm_key, tx_key, sim_key = jax.random.split(eval_key, 3)
-        z = jax.jit(fm.apply, static_argnames='method')(fm_params, gen_sample(xs[0]), rngs=fm_key, method='gen')
+        fm_key, tx_key, sim_key = jax.random.split(dataset_key, 3)
+        z = jax.jit(fm.apply, static_argnames='method')(fm_params, eval_ctx, rngs=fm_key, method='gen')
         tx = connections_to_tx(EVAL_SCENARIO.associations, tx_key, decode_fn(z))
         data_rate, _, internals = EVAL_SCENARIO(sim_key, *tx, return_internals=True)
 

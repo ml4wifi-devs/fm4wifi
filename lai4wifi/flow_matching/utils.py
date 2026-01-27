@@ -84,6 +84,7 @@ def random_tx(key, scenario):
 
 def tx_to_conf(tx, tx_power, mcs, internals):
     ap, sta = np.where(tx)
+    ap, sta = ap.tolist(), sta.tolist()
     mcs = [mcs[a].item() for a in ap]
     tx_power = [tx_power[a].item() for a in ap]
     
