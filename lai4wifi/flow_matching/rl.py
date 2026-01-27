@@ -211,8 +211,8 @@ def main(cfg):
             )
             xs.append(full)
 
-        rewards = np.array(rewards)
-        rewards = rewards - np.mean(rewards)
+        rewards_raw = np.array(rewards)
+        rewards = rewards_raw - rewards_raw.mean()
         rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
 
         loss_val, gn_val = 0.0, 0.0
@@ -240,7 +240,7 @@ def main(cfg):
         log_dict['step'] = step
         log_dict['rl/loss'] = loss_val / grad_steps
         log_dict['rl/grad_norm'] = gn_val / grad_steps
-        log_dict['rl/mean_reward'] = np.mean(rewards)
+        log_dict['rl/mean_reward'] = rewards_raw.mean()
         log_dict['sim/data_rate'] = data_rate.item()
         log_dict['sim/actions'] = tx_to_action(EVAL_SCENARIO.associations, internals, *tx)
 
