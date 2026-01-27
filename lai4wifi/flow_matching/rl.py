@@ -21,7 +21,7 @@ from tqdm import trange
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example
-from lai4wifi.flow_matching.utils import connections_to_tx, gen_sample, random_tx, tx_to_action, tx_to_jraph
+from lai4wifi.flow_matching.utils import connections_to_tx, random_tx, tx_to_action, tx_to_jraph
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 
@@ -82,6 +82,7 @@ def main(cfg):
 
     @jax.jit
     def loss_fn(params, key, batch, rewards, params_old):
+        # DiffusionNFT - https://www.arxiv.org/abs/2509.16117
         t_key, edges_key, nodes_key, globals_key, fm_key, fm_key_old = jax.random.split(key, 6)
 
         t = draw_t(t_key, batch)
@@ -165,36 +166,51 @@ def main(cfg):
 
     all_ctx, all_rewards = [], []
 
-    for i in trange(cfg.train.nft.n_examples, desc='Generating dataset'):
+    for i in trange(cfg.train.nft.n_examples, desc='Generating context dataset'):
         dataset_key, scenario_key, gen_key = jax.random.split(dataset_key, 3)
         scenario_idx = jax.random.choice(scenario_key, len(TRAIN_SCENARIOS))
         scenario = TRAIN_SCENARIOS[scenario_idx.item()]
-        context, target_rate = [], None
+        context = []
 
-        for _ in range(fm_cfg.train.n_timesteps + 1):
+        for _ in range(fm_cfg.train.n_timesteps):
             gen_key, tx_key, sim_key = jax.random.split(gen_key, 3)
             tx = random_tx(tx_key, scenario)
             data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
             context.append(tx_to_jraph(scenario, *tx, internals, encode_fn))
-            target_rate = data_rate.item()
+            all_rewards.append(data_rate.item())
 
-        all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context)
-        all = context[0]._replace(edges=all.edges, nodes=all.nodes, globals=all.globals)
-        
-        all_ctx.append(all)
-        all_rewards.append(target_rate)
+        ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context)
+        ctx = context[0]._replace(edges=ctx.edges, nodes=ctx.nodes, globals=ctx.globals)
+        all_ctx.append((scenario, ctx))
 
     all_rewards = np.array(all_rewards)
     Z_c = all_rewards.std()
 
     for step in trange(cfg.train.n_steps, desc='Training steps'):
-        train_key, sample_key, step_key, dataset_key = jax.random.split(train_key, 4)
+        train_key, sample_key, target_key, step_key, dataset_key = jax.random.split(train_key, 5)
         
         idxs = jax.random.choice(sample_key, len(all_ctx), shape=(cfg.train.nft.n_samples,), replace=False)
-        xs = [all_ctx[idx] for idx in idxs]
-        rewards = [all_rewards[idx] for idx in idxs]
+        xs, rewards = [], []
 
-        # DiffusionNFT - https://www.arxiv.org/abs/2509.16117
+        for idx in idxs:
+            target_key, gen_key, tx_key, sim_key = jax.random.split(target_key, 4)
+            scenario, ctx = all_ctx[idx.item()]
+
+            gen = jax.jit(fm.apply, static_argnames='method')(fm_params_old, ctx, rngs=gen_key, method='gen')
+            decoded = decode_fn(gen)
+            
+            tx = connections_to_tx(scenario.associations, tx_key, decoded)
+            data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
+            rewards.append(data_rate.item())
+
+            target = tx_to_jraph(scenario, *tx, internals, encode_fn)
+            full = ctx._replace(
+                edges=jnp.concatenate([ctx.edges, target.edges[:, None]], axis=1),
+                nodes=jnp.concatenate([ctx.nodes, target.nodes[:, None]], axis=1),
+                globals=jnp.concatenate([ctx.globals, target.globals[:, None]], axis=1)
+            )
+            xs.append(full)
+
         rewards = np.array(rewards)
         rewards = rewards - np.mean(rewards)
         rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
@@ -224,6 +240,7 @@ def main(cfg):
         log_dict['step'] = step
         log_dict['rl/loss'] = loss_val / grad_steps
         log_dict['rl/grad_norm'] = gn_val / grad_steps
+        log_dict['rl/mean_reward'] = np.mean(rewards)
         log_dict['sim/data_rate'] = data_rate.item()
         log_dict['sim/actions'] = tx_to_action(EVAL_SCENARIO.associations, internals, *tx)
 
