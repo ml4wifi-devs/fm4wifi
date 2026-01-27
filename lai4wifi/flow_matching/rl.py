@@ -162,7 +162,7 @@ def main(cfg):
         eval_context.append(tx_to_jraph(EVAL_SCENARIO, *tx, internals, encode_fn))
 
     eval_ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *eval_context)
-    eval_context = eval_context[0]._replace(edges=eval_ctx.edges, nodes=eval_ctx.nodes, globals=eval_ctx.globals)
+    eval_ctx = eval_context[0]._replace(edges=eval_ctx.edges, nodes=eval_ctx.nodes, globals=eval_ctx.globals)
 
     all_ctx, all_rewards = [], []
 
@@ -197,9 +197,7 @@ def main(cfg):
             scenario, ctx = all_ctx[idx.item()]
 
             gen = jax.jit(fm.apply, static_argnames='method')(fm_params_old, ctx, rngs=gen_key, method='gen')
-            decoded = decode_fn(gen)
-            
-            tx = connections_to_tx(scenario.associations, tx_key, decoded)
+            tx = connections_to_tx(scenario.associations, tx_key, decode_fn(gen))
             data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
             rewards.append(data_rate.item())
 
