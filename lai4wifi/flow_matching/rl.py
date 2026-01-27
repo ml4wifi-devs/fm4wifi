@@ -118,7 +118,7 @@ def main(cfg):
         return params, opt_state, loss, grad_norm
 
     key = jax.random.PRNGKey(cfg.train.seed)
-    dataset_key, train_key = jax.random.split(key)
+    eval_key, dataset_key, train_key = jax.random.split(key, 3)
 
     fm_cfg = OmegaConf.load(os.path.join(cfg.fm_path, 'config.yaml'))
     with ocp.CheckpointManager(os.path.abspath(cfg.fm_path), item_names=['ema_params']) as ckpt_manager:
@@ -153,16 +153,16 @@ def main(cfg):
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
     
-    eval_ctx = []
+    eval_context = []
 
     for _ in range(fm_cfg.train.n_timesteps):
-        dataset_key, tx_key, sim_key = jax.random.split(dataset_key, 3)
-        eval_tx = random_tx(tx_key, EVAL_SCENARIO)
-        _, _, eval_internals = EVAL_SCENARIO(sim_key, *eval_tx, return_internals=True)
-        eval_ctx.append(tx_to_jraph(EVAL_SCENARIO, *eval_tx, eval_internals, encode_fn))
+        eval_key, tx_key, sim_key = jax.random.split(eval_key, 3)
+        tx = random_tx(tx_key, EVAL_SCENARIO)
+        _, _, internals = EVAL_SCENARIO(sim_key, *tx, return_internals=True)
+        eval_context.append(tx_to_jraph(EVAL_SCENARIO, *tx, internals, encode_fn))
 
-    eval_ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *eval_ctx)
-    eval_ctx = eval_ctx[0]._replace(edges=eval_ctx.edges, nodes=eval_ctx.nodes, globals=eval_ctx.globals)
+    eval_ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *eval_context)
+    eval_context = eval_context[0]._replace(edges=eval_ctx.edges, nodes=eval_ctx.nodes, globals=eval_ctx.globals)
 
     all_ctx, all_rewards = [], []
 
