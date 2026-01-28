@@ -22,12 +22,12 @@ from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.surrogate.utils import select_best_configuration
 
 
-def eval_with_sim(scenario, configs, key):
+def eval_with_sim(scenario, configs, key, deterministic=False):
     best, best_val = None, float('-inf')
 
     for zt in unbatch(configs):
         key, tx_key, scenario_key = jax.random.split(key, 3)
-        tx = connections_to_tx(scenario.associations, tx_key, zt)
+        tx = connections_to_tx(scenario.associations, tx_key, zt, deterministic)
         data_rate, _ = scenario(scenario_key, *tx, return_internals=False)
 
         if data_rate > best_val:
@@ -37,12 +37,12 @@ def eval_with_sim(scenario, configs, key):
     return best
 
 
-def eval_with_surrogate(scenario, configs, key, surrogate_fn):
+def eval_with_surrogate(scenario, configs, key, surrogate_fn, determinstic=False):
     graphs, txs = [], []
 
     for zt in unbatch(configs):
         key, tx_key = jax.random.split(key)
-        tx = connections_to_tx(scenario.associations, tx_key, zt)
+        tx = connections_to_tx(scenario.associations, tx_key, zt, determinstic)
         graphs.append(tx_to_jraph(scenario, *tx))
         txs.append(tx)
 

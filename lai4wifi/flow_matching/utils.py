@@ -17,12 +17,12 @@ TEST_SCENARIOS = [
 ]
 
 
-def connections_to_tx(associations, key, graph):
+def connections_to_tx(associations, key, graph, deterministic=False):
     n_nodes = len(associations) + sum(len(stas) for stas in associations.values())
     selected_idxs = defaultdict(list)
     
     ap_sta_edge = np.argmax(graph.edges.type, axis=-1) == EdgeType.STA.value
-    not_na = graph.edges.selected[:, -1] < 0
+    not_na = graph.edges.selected[:, -1] <= 0
     selected = np.argmax(graph.edges.selected[:, :-1], axis=-1) == IsSelected.TRUE.value
     idxs = np.where(ap_sta_edge & not_na & selected)[0]
 
@@ -48,8 +48,13 @@ def connections_to_tx(associations, key, graph):
         key, power_key, mcs_key = jax.random.split(key, 3)
         ap, sta = graph.senders[idx].item(), graph.receivers[idx].item()
         tx_matrix[ap, sta] = 1
-        tx_power[ap] = jax.random.categorical(power_key, graph.edges.tx_power[idx, :-1])
-        mcs[ap] = jax.random.categorical(mcs_key, graph.edges.mcs[idx, :-1])
+
+        if deterministic:
+            tx_power[ap] = np.argmax(graph.edges.tx_power[idx, :-1])
+            mcs[ap] = np.argmax(graph.edges.mcs[idx, :-1])
+        else:
+            tx_power[ap] = jax.random.categorical(power_key, graph.edges.tx_power[idx, :-1])
+            mcs[ap] = jax.random.categorical(mcs_key, graph.edges.mcs[idx, :-1])
         
 
     return tx_matrix, tx_power, mcs

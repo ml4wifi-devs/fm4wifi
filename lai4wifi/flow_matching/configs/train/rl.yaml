@@ -1,6 +1,6 @@
 ckpt:
   intermediate: true
-  freq: 10
+  freq: 20
 log:
   type: 'wandb'
   freq: 1
@@ -9,5 +9,5 @@ nft:
   n_samples: 256
   batch_size: 64
   beta: 1.0
-n_steps: 100
+n_steps: 200
 seed: 42

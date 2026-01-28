@@ -40,9 +40,9 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, ideal_mcs, sur
             configs = make_batch(graphs)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn)
+                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn, determinstic=True)
             else:
-                best = eval_with_sim(scenario, configs, eval_key)
+                best = eval_with_sim(scenario, configs, eval_key, deterministic=True)
             
             if ideal_mcs:
                 best_tx, best_tx_power, _ = best
