@@ -115,7 +115,8 @@ def main(cfg):
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         grad_norm = optax.global_norm(grads)
-        return params, opt_state, loss, grad_norm
+        param_dist = optax.global_norm(jax.tree.map(lambda a, b: a - b, params, params_old))
+        return params, opt_state, loss, grad_norm, param_dist
     
     def prepare_context(context):
         batched = make_batch(context)
@@ -234,7 +235,7 @@ def main(cfg):
         rewards = rewards_raw - rewards_raw.mean()
         rewards = 0.5 + 0.5 * np.clip(rewards / Z_c, -1.0, 1.0)
 
-        loss_val, gn_val = 0.0, 0.0
+        loss_val, gn_val, pd_val = 0.0, 0.0, 0.0
 
         for i in range(grad_steps):
             step_key, subkey = jax.random.split(step_key)
@@ -242,11 +243,14 @@ def main(cfg):
             start, end = i * batch_size, (i + 1) * batch_size
             batch = make_batch(xs[start:end])
             batch_rewards = rewards[start:end]
-            
-            fm_params, opt_state, loss, grad_norm = step_fn(fm_params, opt_state, subkey, batch, batch_rewards, fm_params_old)
-            
+
+            fm_params, opt_state, loss, grad_norm, param_dist = step_fn(
+                fm_params, opt_state, subkey, batch, batch_rewards, fm_params_old
+            )
+
             loss_val += loss.item()
             gn_val += grad_norm.item()
+            pd_val += param_dist.item()
 
         fm_params_old = optax.incremental_update(fm_params, fm_params_old, step_size=max(1 - step / cfg.train.n_steps, 0.5))
 
@@ -260,6 +264,7 @@ def main(cfg):
         log_dict['rl/loss'] = loss_val / grad_steps
         log_dict['rl/grad_norm'] = gn_val / grad_steps
         log_dict['rl/mean_reward'] = rewards_raw.mean()
+        log_dict['rl/param_dist'] = pd_val / grad_steps
         log_dict['sim/data_rate'] = data_rate.item()
         log_dict['sim/actions'] = tx_to_action(EVAL_SCENARIO.associations, internals, *tx)
 
