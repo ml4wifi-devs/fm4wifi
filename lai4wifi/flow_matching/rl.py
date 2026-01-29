@@ -23,7 +23,7 @@ from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example
 from lai4wifi.flow_matching.utils import connections_to_tx, random_tx, tx_to_action, tx_to_jraph
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch
+from lai4wifi.graphs.utils import make_batch, unbatch
 
 
 TRAIN_SCENARIOS = [
@@ -116,6 +116,13 @@ def main(cfg):
         params = optax.apply_updates(params, updates)
         grad_norm = optax.global_norm(grads)
         return params, opt_state, loss, grad_norm
+    
+    def prepare_context(context):
+        batched = make_batch(context)
+        encoded = encode_fn(batched)
+        unbatched = unbatch(encoded)
+        ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *unbatched)
+        return unbatched[0]._replace(edges=ctx.edges, nodes=ctx.nodes, globals=ctx.globals)
 
     key = jax.random.PRNGKey(cfg.train.seed)
     eval_key, dataset_key, train_key = jax.random.split(key, 3)
@@ -125,6 +132,7 @@ def main(cfg):
         fm_params = ckpt_manager.restore(None, args=ocp.args.Composite(ema_params=ocp.args.PyTreeRestore())).ema_params
 
     fm = FlowMatching(**fm_cfg.model)
+    gen_fn = jax.jit(partial(fm.apply, n_steps=cfg.train.gen.n_steps, method='gen'))
 
     gnn_cfg = OmegaConf.load(os.path.join(fm_cfg.gnn_path, 'config.yaml'))
     with ocp.CheckpointManager(os.path.abspath(fm_cfg.gnn_path), item_names=['params']) as ckpt_manager:
@@ -137,7 +145,10 @@ def main(cfg):
     fm_params, fm_params_old = deepcopy(fm_params), deepcopy(fm_params)
     optimizer = optax.chain(
         optax.clip_by_global_norm(cfg.optimizer.grad_clip),
-        optax.adamw(cfg.optimizer.learning_rate, weight_decay=cfg.optimizer.weight_decay, b1=cfg.optimizer.b1, b2=cfg.optimizer.b2)
+        optax.adamw(
+            cfg.optimizer.learning_rate, weight_decay=cfg.optimizer.weight_decay, 
+            b1=cfg.optimizer.b1, b2=cfg.optimizer.b2, eps=cfg.optimizer.eps
+        )
     )
     opt_state = optimizer.init(fm_params)
 
@@ -153,18 +164,16 @@ def main(cfg):
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
     
-    eval_context = []
+    eval_ctx = []
 
     for _ in range(fm_cfg.train.n_timesteps):
         eval_key, tx_key, sim_key = jax.random.split(eval_key, 3)
         tx = random_tx(tx_key, EVAL_SCENARIO)
         _, _, internals = EVAL_SCENARIO(sim_key, *tx, return_internals=True)
-        eval_context.append(tx_to_jraph(EVAL_SCENARIO, *tx, internals, encode_fn))
+        eval_ctx.append(tx_to_jraph(EVAL_SCENARIO, *tx, internals))
 
-    eval_ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *eval_context)
-    eval_ctx = eval_context[0]._replace(edges=eval_ctx.edges, nodes=eval_ctx.nodes, globals=eval_ctx.globals)
-
-    all_ctx, all_rewards = [], []
+    eval_ctx = prepare_context(eval_ctx)
+    all_scenarios, all_ctx, all_rewards = [], [], []
 
     for i in trange(cfg.train.nft.n_examples, desc='Generating context dataset'):
         dataset_key, scenario_key, gen_key = jax.random.split(dataset_key, 3)
@@ -176,32 +185,44 @@ def main(cfg):
             gen_key, tx_key, sim_key = jax.random.split(gen_key, 3)
             tx = random_tx(tx_key, scenario)
             data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
-            context.append(tx_to_jraph(scenario, *tx, internals, encode_fn))
+            context.append(tx_to_jraph(scenario, *tx, internals))
             all_rewards.append(data_rate.item())
 
-        ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context)
-        ctx = context[0]._replace(edges=ctx.edges, nodes=ctx.nodes, globals=ctx.globals)
-        all_ctx.append((scenario, ctx))
+        context = prepare_context(context)
+        all_scenarios.append(scenario)
+        all_ctx.append(context)
 
     all_rewards = np.array(all_rewards)
     Z_c = all_rewards.std()
 
     for step in trange(cfg.train.n_steps, desc='Training steps'):
-        train_key, sample_key, target_key, step_key, dataset_key = jax.random.split(train_key, 5)
+        train_key, sample_key, fm_key, target_key, step_key, dataset_key = jax.random.split(train_key, 6)
         
-        idxs = jax.random.choice(sample_key, len(all_ctx), shape=(cfg.train.nft.n_samples,), replace=False)
-        xs, rewards = [], []
+        idxs = jax.random.choice(sample_key, len(all_ctx), shape=(cfg.train.nft.n_samples,))
+        contexts, scenarios = [all_ctx[i] for i in idxs.tolist()], [all_scenarios[i] for i in idxs.tolist()]
+        decoded = []
 
-        for idx in idxs:
-            target_key, gen_key, tx_key, sim_key = jax.random.split(target_key, 4)
-            scenario, ctx = all_ctx[idx.item()]
+        for i in range(0, cfg.train.nft.n_samples, batch_size):
+            fm_key, subkey = jax.random.split(fm_key)
+            batch = make_batch(contexts[i:i + batch_size])
+            generated = gen_fn(fm_params_old, batch, rngs=subkey)
+            decoded += unbatch(decode_fn(generated))
 
-            gen = jax.jit(fm.apply, static_argnames='method')(fm_params_old, ctx, rngs=gen_key, method='gen')
-            tx = connections_to_tx(scenario.associations, tx_key, decode_fn(gen))
+        targets, rewards = [], []
+
+        for scenario, zt in zip(scenarios, decoded):
+            target_key, tx_key, sim_key = jax.random.split(target_key, 3)
+            tx = connections_to_tx(scenario.associations, tx_key, zt)
             data_rate, _, internals = scenario(sim_key, *tx, return_internals=True)
+            targets.append(tx_to_jraph(scenario, *tx, internals))
             rewards.append(data_rate.item())
 
-            target = tx_to_jraph(scenario, *tx, internals, encode_fn)
+        targets = make_batch(targets)
+        targets = encode_fn(targets)
+        targets = unbatch(targets)
+        xs = []
+            
+        for ctx, target in zip(contexts, targets):
             full = ctx._replace(
                 edges=jnp.concatenate([ctx.edges, target.edges[:, None]], axis=1),
                 nodes=jnp.concatenate([ctx.nodes, target.nodes[:, None]], axis=1),
@@ -230,7 +251,7 @@ def main(cfg):
         fm_params_old = optax.incremental_update(fm_params, fm_params_old, step_size=max(1 - step / cfg.train.n_steps, 0.5))
 
         fm_key, tx_key, sim_key = jax.random.split(dataset_key, 3)
-        z = jax.jit(fm.apply, static_argnames='method')(fm_params, eval_ctx, rngs=fm_key, method='gen')
+        z = gen_fn(fm_params, eval_ctx, rngs=fm_key)
         tx = connections_to_tx(EVAL_SCENARIO.associations, tx_key, decode_fn(z))
         data_rate, _, internals = EVAL_SCENARIO(sim_key, *tx, return_internals=True)
 

@@ -55,7 +55,6 @@ def connections_to_tx(associations, key, graph, deterministic=False):
         else:
             tx_power[ap] = jax.random.categorical(power_key, graph.edges.tx_power[idx, :-1])
             mcs[ap] = jax.random.categorical(mcs_key, graph.edges.mcs[idx, :-1])
-        
 
     return tx_matrix, tx_power, mcs
 
