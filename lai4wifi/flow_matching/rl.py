@@ -20,7 +20,7 @@ from omegaconf import OmegaConf
 from tqdm import trange
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example
+from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example, prepare_context
 from lai4wifi.flow_matching.utils import connections_to_tx, random_tx, tx_to_action, tx_to_jraph
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch, unbatch
@@ -117,13 +117,6 @@ def main(cfg):
         grad_norm = optax.global_norm(grads)
         param_dist = optax.global_norm(jax.tree.map(lambda a, b: a - b, params, params_old))
         return params, opt_state, loss, grad_norm, param_dist
-    
-    def prepare_context(context):
-        batched = make_batch(context)
-        encoded = encode_fn(batched)
-        unbatched = unbatch(encoded)
-        ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *unbatched)
-        return unbatched[0]._replace(edges=ctx.edges, nodes=ctx.nodes, globals=ctx.globals)
 
     key = jax.random.PRNGKey(cfg.train.seed)
     eval_key, dataset_key, train_key = jax.random.split(key, 3)
@@ -173,7 +166,7 @@ def main(cfg):
         _, _, internals = EVAL_SCENARIO(sim_key, *tx, return_internals=True)
         eval_ctx.append(tx_to_jraph(EVAL_SCENARIO, *tx, internals))
 
-    eval_ctx = prepare_context(eval_ctx)
+    eval_ctx = prepare_context(eval_ctx, encode_fn)
     all_scenarios, all_ctx, all_rewards = [], [], []
 
     for i in trange(cfg.train.nft.n_examples, desc='Generating context dataset'):
@@ -189,7 +182,7 @@ def main(cfg):
             context.append(tx_to_jraph(scenario, *tx, internals))
             all_rewards.append(data_rate.item())
 
-        context = prepare_context(context)
+        context = prepare_context(context, encode_fn)
         all_scenarios.append(scenario)
         all_ctx.append(context)
 

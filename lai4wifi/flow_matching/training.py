@@ -22,7 +22,15 @@ from lai4wifi.flow_matching.mmd import compute_mmd
 from lai4wifi.flow_matching.utils import gen_sample, random_tx, tx_to_jraph
 from lai4wifi.graphs.dataset import load_dataset
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch
+from lai4wifi.graphs.utils import make_batch, unbatch
+
+
+def prepare_context(context, encode_fn):
+    batched = make_batch(context)
+    encoded = encode_fn(batched)
+    unbatched = unbatch(encoded)
+    ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *unbatched)
+    return unbatched[0]._replace(edges=ctx.edges, nodes=ctx.nodes, globals=ctx.globals)
 
 
 def draw_configurations(dataset_item, n_timesteps, key, encode_fn):
@@ -30,13 +38,15 @@ def draw_configurations(dataset_item, n_timesteps, key, encode_fn):
     
     target_idx = jax.random.choice(idx_key, len(dataset_item.configurations))
     target_conf = dataset_item.configurations[target_idx]
-    
     context = []
+    
     for i in range(n_timesteps):
         tx_key, sim_key = jax.random.split(ctx_keys[i])
-        tx_params = random_tx(tx_key, dataset_item.scenario)
-        _, _, internals = dataset_item.scenario(sim_key, *tx_params, return_internals=True)
-        context.append(tx_to_jraph(dataset_item.scenario, *tx_params, internals, encode_fn))
+        tx = random_tx(tx_key, dataset_item.scenario)
+        _, _, internals = dataset_item.scenario(sim_key, *tx, return_internals=True)
+        context.append(tx_to_jraph(dataset_item.scenario, *tx, internals))
+        
+    context = prepare_context(context, encode_fn)
 
     all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context, target_conf)
     return target_conf._replace(
