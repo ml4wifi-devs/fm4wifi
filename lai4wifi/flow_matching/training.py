@@ -8,6 +8,7 @@ from copy import deepcopy
 from functools import partial
 from glob import glob
 
+import grain
 import hydra
 import jax
 import jax.numpy as jnp
@@ -56,34 +57,59 @@ def draw_configurations(dataset_item, n_timesteps, key, encode_fn):
     )
 
 
-def load(dataset_path, batch_size, n_timesteps, key, val, encode_fn):
-    dataset_paths = glob(f'{dataset_path}/*.pkl.lz4')
-    dataset_paths = filter(lambda p: ('val' in p) == val, dataset_paths)
-    dataset_paths = filter(lambda p: 'random' not in p, dataset_paths)
-    dataset = sum((load_dataset(path) for path in dataset_paths), start=[])
+class DataSource(grain.sources.RandomAccessDataSource):
+    def __init__(self, dataset_path, filter_fn=None):
+        if filter_fn is None:
+            filter_fn = lambda _: True
+            
+        paths = [p for p in glob(f'{dataset_path}/*.pkl.lz4')]
+        paths = list(filter(filter_fn, paths))
+        self._dataset = sum((load_dataset(p) for p in paths), start=[])
+        self._dataset = list(filter(lambda d: len(d.configurations) > 0, self._dataset))
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, idx):
+        return self._dataset[idx]
+
+
+def create_data_loader(source, batch_size, seed, map_fn, batch_fn, num_workers=8):
+    ds = grain.MapDataset.source(source).seed(seed).shuffle()
+    ds = ds.map(map_fn)
+    ds = ds.to_iter_dataset()
+    ds = ds.batch(batch_size, batch_fn=batch_fn)
+    ds = ds.mp_prefetch(grain.MultiprocessingOptions(num_workers))
+    return ds
+
+
+def load(dataset_path, batch_size, seed, filter_fn=None, map_fn=None, batch_fn=make_batch):
+    if map_fn is None:
+        map_fn = lambda x: x
+    
+    source = DataSource(dataset_path, filter_fn)
 
     while True:
-        edges = 0
-        batch = []
+        for batch in create_data_loader(source, batch_size, seed, map_fn, batch_fn):
+            yield batch
+        seed += 1
 
-        while True:
-            key, idx_key, conf_key = jax.random.split(key, 3)
-            idx = jax.random.choice(idx_key, len(dataset))
 
-            if len(dataset[idx].configurations) == 0:
-                continue
-            
-            graph_size = dataset[idx].configurations[0].edges.shape[0]
+def filter_fn_factory(val):
+    def filter_fn(item):
+        return ('val' in item) == val and 'random' not in item
+    
+    return filter_fn
 
-            if edges + graph_size < batch_size:
-                batch.append(draw_configurations(dataset[idx], n_timesteps, conf_key, encode_fn))
-                edges += graph_size
-            elif edges == 0:
-                continue
-            else:
-                break
 
-        yield make_batch(batch)
+def map_fn_factory(n_timesteps, encode_fn, seed):
+    key_state = {'key': jax.random.PRNGKey(seed)}
+
+    def map_fn(item):
+        key_state['key'], subkey = jax.random.split(key_state['key'])
+        return draw_configurations(item, n_timesteps, subkey, encode_fn)
+
+    return map_fn
 
 
 @partial(jax.jit, static_argnames=['axis', 'total_repeat_length'])
@@ -149,7 +175,7 @@ def main(cfg):
         return mmds.mean()
 
     key = jax.random.PRNGKey(cfg.train.seed)
-    init_key, train_key, val_key, mmd_key, data_key, val_data_key = jax.random.split(key, 6)
+    init_key, train_key, val_key, mmd_key = jax.random.split(key, 4)
 
     gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
     with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
@@ -158,8 +184,10 @@ def main(cfg):
     gnn = GnnAutoencoder(**gnn_cfg.model)
     encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
 
-    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, data_key, val=False, encode_fn=encode_fn)
-    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.n_timesteps, val_data_key, val=True, encode_fn=encode_fn))
+    map_fn = map_fn_factory(cfg.model.n_timesteps, encode_fn, cfg.train.seed)
+    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn)
+    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=True), map_fn=map_fn))
+
     sample = next(iter(data))
     sample = (sample, jnp.zeros((sample.edges.shape[0], 1)))
 

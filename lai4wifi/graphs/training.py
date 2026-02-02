@@ -4,7 +4,6 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
-from glob import glob
 
 import hydra
 import jax
@@ -16,26 +15,8 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.dataset.utils import load_dataset
+from lai4wifi.flow_matching.training import load
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch
-
-
-def load(batch_size, key, val_dataset=False):
-    all_datasets = []
-
-    for file in glob(f'{os.path.dirname(__file__)}/datasets/*.pkl.lz4'):
-        if (val_dataset and 'val' not in file) or (not val_dataset and 'val' in file):
-            continue
-
-        dataset = load_dataset(file)
-        dataset = sum((d.configurations for d in dataset), start=[])
-        all_datasets += dataset
-
-    while True:
-        key, subkey = jax.random.split(key)
-        idxs = jax.random.choice(subkey, len(all_datasets), (batch_size,))
-        yield make_batch([all_datasets[i] for i in idxs])
 
 
 @hydra.main(config_path="configs", config_name="gnn", version_base=None)
@@ -125,10 +106,10 @@ def main(cfg):
         log_dict[f'{split}/{type}/type'] = values[6].item() / n_steps
 
     key = jax.random.PRNGKey(cfg.train.seed)
-    init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
+    init_key, train_key, val_key = jax.random.split(key, 3)
 
-    data = load(cfg.train.batch_size, data_key)
-    val_data = iter(load(cfg.train.batch_size, val_data_key, val_dataset=True))
+    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=lambda item: 'val' not in item)
+    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=lambda item: 'val' in item))
     sample = next(iter(data))
 
     model = GnnAutoencoder(**cfg.model)

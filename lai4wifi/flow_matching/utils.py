@@ -1,9 +1,11 @@
 import os
 os.environ['JAX_ENABLE_X64'] = 'True'
 
+from functools import partial
 from collections import defaultdict
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from mapc_research.envs.scenario_impl import residential_scenario
 
@@ -17,7 +19,7 @@ TEST_SCENARIOS = [
 ]
 
 
-def connections_to_tx(associations, key, graph, deterministic=False):
+def _connections_to_tx_deprecated(associations, key, graph, deterministic=False):
     n_nodes = len(associations) + sum(len(stas) for stas in associations.values())
     selected_idxs = defaultdict(list)
     
@@ -57,6 +59,94 @@ def connections_to_tx(associations, key, graph, deterministic=False):
             mcs[ap] = jax.random.categorical(mcs_key, graph.edges.mcs[idx, :-1])
 
     return tx_matrix, tx_power, mcs
+
+
+def build_associations_arrays(associations):
+    ap_ids = jnp.array(list(associations.keys()), dtype=int)
+    max_stas = max(len(stas) for stas in associations.values())
+    n_aps = len(associations)
+
+    sta_ids = jnp.full((n_aps, max_stas), -1, dtype=int)
+    n_stas = jnp.zeros(n_aps, dtype=int)
+
+    for i, (ap, stas) in enumerate(associations.items()):
+        sta_ids = sta_ids.at[i, :len(stas)].set(jnp.array(stas, dtype=int))
+        n_stas = n_stas.at[i].set(len(stas))
+
+    n_nodes = n_aps + sum(len(stas) for stas in associations.values())
+    return ap_ids, sta_ids, n_stas, n_nodes
+
+
+@partial(jax.jit, static_argnames=['n_nodes', 'deterministic'])
+def _connections_to_tx_jax(key, graph, ap_ids, sta_ids, n_stas, n_nodes, deterministic):
+    n_edges = graph.senders.shape[0]
+    n_aps = ap_ids.shape[0]
+
+    ap_sta_edge = jnp.argmax(graph.edges.type, axis=-1) == EdgeType.STA.value
+    not_na = graph.edges.selected[:, -1] <= 0
+    selected = jnp.argmax(graph.edges.selected[:, :-1], axis=-1) == IsSelected.TRUE.value
+    valid_edge_mask = ap_sta_edge & not_na & selected
+
+    def is_valid_for_ap(ap_idx):
+        ap_id = ap_ids[ap_idx]
+        stas = sta_ids[ap_idx]
+        n_sta = n_stas[ap_idx]
+        sender_is_ap = graph.senders == ap_id
+        receiver_is_sta = jnp.any(
+            (graph.receivers[:, None] == stas[None, :]) & (jnp.arange(stas.shape[0])[None, :] < n_sta),
+            axis=-1
+        )
+        return valid_edge_mask & sender_is_ap & receiver_is_sta
+
+    ap_edge_masks = jax.vmap(is_valid_for_ap)(jnp.arange(n_aps))
+
+    def select_edge_for_ap(key, ap_idx):
+        mask = ap_edge_masks[ap_idx]
+        n_valid = mask.sum()
+        edge_indices = jnp.where(mask, jnp.arange(n_edges), n_edges)
+        sorted_indices = jnp.sort(edge_indices)
+        select_idx = jax.random.randint(key, (), 0, jnp.maximum(n_valid, 1))
+        selected_edge = sorted_indices[select_idx]
+        return jnp.where(n_valid > 0, selected_edge, -1)
+
+    keys = jax.random.split(key, n_aps + 1)
+    key, ap_keys = keys[0], keys[1:]
+    selected_edges = jax.vmap(select_edge_for_ap)(ap_keys, jnp.arange(n_aps))
+
+    tx_matrix = jnp.zeros((n_nodes, n_nodes), dtype=int)
+    tx_power = jnp.zeros(n_nodes, dtype=int)
+    mcs = jnp.zeros(n_nodes, dtype=int)
+
+    def set_tx_for_edge(carry, inputs):
+        tx_matrix, tx_power, mcs, key = carry
+        edge_idx, ap_id = inputs
+        valid = edge_idx >= 0
+        safe_idx = jnp.maximum(edge_idx, 0)
+        ap, sta = graph.senders[safe_idx], graph.receivers[safe_idx]
+
+        tx_matrix = jnp.where(valid, tx_matrix.at[ap, sta].set(1), tx_matrix)
+
+        key, power_key, mcs_key = jax.random.split(key, 3)
+        if deterministic:
+            power_val = jnp.argmax(graph.edges.tx_power[safe_idx, :-1]).astype(int)
+            mcs_val = jnp.argmax(graph.edges.mcs[safe_idx, :-1]).astype(int)
+        else:
+            power_val = jax.random.categorical(power_key, graph.edges.tx_power[safe_idx, :-1]).astype(int)
+            mcs_val = jax.random.categorical(mcs_key, graph.edges.mcs[safe_idx, :-1]).astype(int)
+
+        tx_power = jnp.where(valid, tx_power.at[ap].set(power_val), tx_power)
+        mcs = jnp.where(valid, mcs.at[ap].set(mcs_val), mcs)
+        return (tx_matrix, tx_power, mcs, key), None
+
+    (tx_matrix, tx_power, mcs, _), _ = jax.lax.scan(
+        set_tx_for_edge, (tx_matrix, tx_power, mcs, key), (selected_edges, ap_ids)
+    )
+    return tx_matrix, tx_power, mcs
+
+
+def connections_to_tx(associations, key, graph, deterministic=False):
+    ap_ids, sta_ids, n_stas, n_nodes = build_associations_arrays(associations)
+    return _connections_to_tx_jax(key, graph, ap_ids, sta_ids, n_stas, n_nodes, deterministic)
 
 
 def tx_to_action(associations, internals, tx_matrix, tx_power, mcs):

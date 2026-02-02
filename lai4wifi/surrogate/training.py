@@ -5,7 +5,6 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
 from dataclasses import replace
-from glob import glob
 
 import hydra
 import jax
@@ -17,39 +16,26 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.dataset.utils import load_dataset
+from lai4wifi.flow_matching.training import load
 from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.surrogate.utils import RATE_MEAN, RATE_STD, calculate_data_rate
 from lai4wifi.graphs.utils import make_batch
 
 
-def load(dataset_path, batch_size, key, val):
-    paths = glob(f'{dataset_path}/*.pkl.lz4')
-    paths = filter(lambda p: ('val' in p) == val, paths)
-    paths = sorted(paths)
-    datasets = sum((load_dataset(path) for path in paths), start=[])
+def filter_fn_factory(val):
+    return lambda item: ('val' in item) == val
 
-    while True:
-        graph_batch, rate_batch = [], []
 
-        while len(graph_batch) < batch_size:
-            key, dataset_key, config_key = jax.random.split(key, 3)
-            dataset_idx = jax.random.choice(dataset_key, len(datasets))
-            
-            if len(datasets[dataset_idx].configurations) == 0:
-                continue
+@jax.jit
+def map_fn(graph):
+    rate = (calculate_data_rate(graph) - RATE_MEAN) / RATE_STD
+    graph = graph._replace(edges=replace(graph.edges, success=jnp.zeros_like(graph.edges.success)))
+    return graph, rate
 
-            config_idx = jax.random.choice(config_key, len(datasets[dataset_idx].configurations))
-            graph = datasets[dataset_idx].configurations[config_idx]
-            
-            rate = calculate_data_rate(graph)
-            rate = (rate - RATE_MEAN) / RATE_STD
-            
-            graph = graph._replace(edges=replace(graph.edges, success=jnp.zeros_like(graph.edges.success)))
-            graph_batch.append(graph)
-            rate_batch.append(rate)
 
-        yield make_batch(graph_batch), np.asarray(rate_batch + [0.0])
+def batch_fn(batch):
+    graphs, rates = zip(*batch)
+    return make_batch(graphs), np.asarray(list(rates) + [0.0])
 
 
 @hydra.main(config_path='configs', config_name='surrogate', version_base=None)
@@ -69,7 +55,7 @@ def main(cfg):
     def loss_fn(params, key, batch, rates):
         pred = model.apply(params, batch, rngs=key)
         mask = jraph.get_graph_padding_mask(batch)
-        loss = quantile_loss(pred, rates)
+        loss = optax.squared_error(pred, rates)
         loss = (mask * loss).sum() / mask.sum()
         return loss, pred
 
@@ -99,10 +85,10 @@ def main(cfg):
         return params, opt_state, loss, pred
 
     key = jax.random.PRNGKey(cfg.train.seed)
-    init_key, train_key, val_key, data_key, val_data_key = jax.random.split(key, 5)
+    init_key, train_key, val_key = jax.random.split(key, 3)
 
-    data = load(cfg.dataset_path, cfg.train.batch_size, data_key, val=False)
-    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, val_data_key, val=True))
+    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn, batch_fn=batch_fn)
+    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=True), map_fn=map_fn, batch_fn=batch_fn))
     sample = next(iter(data))[0]
 
     model = SurrogateModel(**cfg.model)
