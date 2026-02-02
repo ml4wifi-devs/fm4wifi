@@ -65,7 +65,7 @@ class DataSource(grain.sources.RandomAccessDataSource):
         paths = [p for p in glob(f'{dataset_path}/*.pkl.lz4')]
         paths = list(filter(filter_fn, paths))
         self._dataset = sum((load_dataset(p) for p in paths), start=[])
-        self._dataset = list(filter(lambda d: len(d.configurations) > 0, self._dataset))
+        self._dataset = sum((d.configurations for d in self._dataset), start=[])
 
     def __len__(self):
         return len(self._dataset)
@@ -74,12 +74,12 @@ class DataSource(grain.sources.RandomAccessDataSource):
         return self._dataset[idx]
 
 
-def create_data_loader(source, batch_size, seed, map_fn, batch_fn, num_workers=8):
+def create_data_loader(source, batch_size, seed, map_fn, batch_fn, num_workers=0):
     ds = grain.MapDataset.source(source).seed(seed).shuffle()
     ds = ds.map(map_fn)
     ds = ds.to_iter_dataset()
     ds = ds.batch(batch_size, batch_fn=batch_fn)
-    ds = ds.mp_prefetch(grain.MultiprocessingOptions(num_workers))
+    ds = ds.mp_prefetch(grain.MultiprocessingOptions(num_workers, per_worker_buffer_size=16))
     return ds
 
 
