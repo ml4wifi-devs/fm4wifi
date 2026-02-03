@@ -16,7 +16,7 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.flow_matching.training import load
+from lai4wifi.flow_matching.utils import create_data_loader
 from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.surrogate.utils import RATE_MEAN, RATE_STD, calculate_data_rate
 from lai4wifi.graphs.utils import make_batch
@@ -26,11 +26,12 @@ def filter_fn_factory(val):
     return lambda item: ('val' in item) == val
 
 
-@jax.jit
-def map_fn(graph):
-    rate = (calculate_data_rate(graph) - RATE_MEAN) / RATE_STD
-    graph = graph._replace(edges=replace(graph.edges, success=jnp.zeros_like(graph.edges.success)))
-    return graph, rate
+def map_fn(item):
+    with jax.default_device(jax.devices('cpu')[0]):
+        graph, _ = item
+        rate = (calculate_data_rate(graph) - RATE_MEAN) / RATE_STD
+        graph = graph._replace(edges=replace(graph.edges, success=jnp.zeros_like(graph.edges.success)))
+        return graph, rate
 
 
 def batch_fn(batch):
@@ -87,8 +88,12 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key = jax.random.split(key, 3)
 
-    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn, batch_fn=batch_fn)
-    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=True), map_fn=map_fn, batch_fn=batch_fn))
+    data = create_data_loader(
+        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn, batch_fn=batch_fn
+    )
+    val_data = iter(create_data_loader(
+        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=True), map_fn=map_fn, batch_fn=batch_fn
+    ))
     sample = next(iter(data))[0]
 
     model = SurrogateModel(**cfg.model)
@@ -114,13 +119,10 @@ def main(cfg):
         wandb.init(project='lai4wifi', name=cfg.name)
     
     for step, (batch, rates) in zip(range(cfg.train.n_steps), data):
-        log_dict = {}
+        log_dict = {'step': step}
 
         train_key, subkey = jax.random.split(train_key)
         params, opt_state, loss, pred = step_fn(params, opt_state, subkey, batch, rates)
-
-        log_dict['step'] = step
-        log_dict['train/loss'] = loss.item()
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
             val_loss = 0.0
@@ -129,11 +131,12 @@ def main(cfg):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch, val_rates = next(val_data)
                 loss, pred = mdn_loss_fn(params, subkey, val_batch, val_rates)
-                val_loss += loss.item()
+                val_loss += loss
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
+            log_dict['train/loss'] = loss
             logging.info(log_dict)
             if cfg.train.log.type == 'wandb':
                 wandb.log(log_dict)

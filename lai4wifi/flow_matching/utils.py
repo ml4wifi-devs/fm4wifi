@@ -1,17 +1,19 @@
 import os
 os.environ['JAX_ENABLE_X64'] = 'True'
 
-from functools import partial
 from collections import defaultdict
+from functools import partial
+from glob import glob
 
+import grain
 import jax
 import jax.numpy as jnp
 import numpy as np
 from mapc_research.envs.scenario_impl import residential_scenario
 
-from lai4wifi.dataset.utils import Configuration, TxPair
+from lai4wifi.dataset.utils import Configuration, TxPair, load_dataset
 from lai4wifi.graphs.attributes import *
-from lai4wifi.graphs.utils import conf_to_nx, nx_to_jraph
+from lai4wifi.graphs.utils import conf_to_nx, nx_to_jraph, make_batch, unbatch
 
 
 TEST_SCENARIOS = [
@@ -203,3 +205,51 @@ def tx_to_jraph(scenario, tx, tx_power, mcs, internals=None, encode_fn=None):
 def gen_sample(graph):
     edges, nodes, globals = jax.tree.map(lambda x: x[:, :-1], (graph.edges, graph.nodes, graph.globals))
     return graph._replace(edges=edges, nodes=nodes, globals=globals)
+
+
+def prepare_context(context, encode_fn):
+    batched = make_batch(context)
+    encoded = encode_fn(batched)
+    unbatched = unbatch(encoded)
+    ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *unbatched)
+    return unbatched[0]._replace(edges=ctx.edges, nodes=ctx.nodes, globals=ctx.globals)
+
+
+@partial(jax.jit, static_argnames=['axis', 'total_repeat_length'])
+def jax_repeat(a, repeats, axis, total_repeat_length):
+    return jnp.repeat(a, repeats, axis, total_repeat_length=total_repeat_length)
+
+
+class DataSource(grain.sources.RandomAccessDataSource):
+    def __init__(self, dataset_path, filter_fn=None):
+        if filter_fn is None:
+            filter_fn = lambda _: True
+            
+        paths = [p for p in glob(f'{dataset_path}/*.pkl.lz4')]
+        paths = list(filter(filter_fn, paths))
+        self._dataset = sum((load_dataset(p) for p in paths), start=[])
+        self._dataset = list(((config, item.scenario) for item in self._dataset for config in item.configurations))
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, idx):
+        return self._dataset[idx]
+
+
+def default_map_fn(item):
+    graph, _ = item
+    return graph
+
+
+def create_data_loader(dataset_path, batch_size, seed, filter_fn=None, map_fn=default_map_fn, batch_fn=make_batch, num_workers=8):
+    source = DataSource(dataset_path, filter_fn)
+    ds = grain.MapDataset.source(source)
+    ds = ds.seed(seed)
+    ds = ds.shuffle()
+    ds = ds.map(map_fn)
+    ds = ds.batch(batch_size, batch_fn=batch_fn)
+    ds = ds.repeat()
+    ds = ds.to_iter_dataset(grain.ReadOptions(num_threads=0))
+    ds = ds.mp_prefetch(grain.MultiprocessingOptions(num_workers, per_worker_buffer_size=16))
+    return ds

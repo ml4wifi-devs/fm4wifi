@@ -11,7 +11,7 @@ mmd:
   enabled: true
   freq: 200
   n_samples: 5
-batch_size: 512
+batch_size: 32
 n_steps: 5000
 n_timesteps: 7
 seed: 42

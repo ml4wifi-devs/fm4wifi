@@ -15,7 +15,7 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.flow_matching.training import load
+from lai4wifi.flow_matching.utils import create_data_loader
 from lai4wifi.graphs.model import GnnAutoencoder
 
 
@@ -97,19 +97,23 @@ def main(cfg):
         return params, opt_state, loss, *other
 
     def log_vector(log_dict, split, type, values, n_steps=1):
-        log_dict[f'{split}/{type}/active'] = values[0].item() / n_steps
-        log_dict[f'{split}/{type}/mcs'] = values[1].item() / n_steps
-        log_dict[f'{split}/{type}/rssi'] = values[2].item() / n_steps
-        log_dict[f'{split}/{type}/selected'] = values[3].item() / n_steps
-        log_dict[f'{split}/{type}/success'] = values[4].item() / n_steps
-        log_dict[f'{split}/{type}/tx_power'] = values[5].item() / n_steps
-        log_dict[f'{split}/{type}/type'] = values[6].item() / n_steps
+        log_dict[f'{split}/{type}/active'] = values[0] / n_steps
+        log_dict[f'{split}/{type}/mcs'] = values[1] / n_steps
+        log_dict[f'{split}/{type}/rssi'] = values[2] / n_steps
+        log_dict[f'{split}/{type}/selected'] = values[3] / n_steps
+        log_dict[f'{split}/{type}/success'] = values[4] / n_steps
+        log_dict[f'{split}/{type}/tx_power'] = values[5] / n_steps
+        log_dict[f'{split}/{type}/type'] = values[6] / n_steps
 
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key = jax.random.split(key, 3)
 
-    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=lambda item: 'val' not in item)
-    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=lambda item: 'val' in item))
+    data = create_data_loader(
+        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=lambda item: 'val' not in item
+    )
+    val_data = iter(create_data_loader(
+        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=lambda item: 'val' in item
+    ))
     sample = next(iter(data))
 
     model = GnnAutoencoder(**cfg.model)
@@ -134,17 +138,10 @@ def main(cfg):
         wandb.init(project='lai4wifi', name=cfg.name)
 
     for step, batch in zip(range(cfg.train.n_steps), data):
-        log_dict = {}
+        log_dict = {'step': step}
 
         train_key, subkey = jax.random.split(train_key)
         params, opt_state, loss, (kl_loss, other_losses, na_metrics, pred_metrics) = step_fn(params, opt_state, subkey, batch)
-
-        log_dict['step'] = step
-        log_dict['train/loss'] = loss.item()
-        log_dict['train/kl_loss'] = kl_loss.item()
-        log_vector(log_dict, 'train', 'loss', other_losses)
-        log_vector(log_dict, 'train', 'na_acc', na_metrics)
-        log_vector(log_dict, 'train', 'pred_acc', pred_metrics)
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
             val_loss, val_kl_loss = 0.0, 0.0
@@ -154,8 +151,8 @@ def main(cfg):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch = next(val_data)
                 loss, (kl_loss, other_losses, na_metrics, pred_metrics) = loss_fn(params, subkey, val_batch)
-                val_loss += loss.item()
-                val_kl_loss += kl_loss.item()
+                val_loss += loss
+                val_kl_loss += kl_loss
                 val_other_losses += other_losses
                 val_na_metrics += na_metrics
                 val_pred_metrics += pred_metrics
@@ -167,6 +164,11 @@ def main(cfg):
             log_vector(log_dict, 'val', 'pred_acc', val_pred_metrics, cfg.train.val.n_steps)
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
+            log_dict['train/loss'] = loss
+            log_dict['train/kl_loss'] = kl_loss
+            log_vector(log_dict, 'train', 'loss', other_losses)
+            log_vector(log_dict, 'train', 'na_acc', na_metrics)
+            log_vector(log_dict, 'train', 'pred_acc', pred_metrics)
             logging.info(log_dict)
             if cfg.train.log.type == 'wandb':
                 wandb.log(log_dict)

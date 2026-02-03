@@ -4,6 +4,7 @@ defaults:
   - optimizer: base
   - train: base
 name: gnn_ae_base
+dataset_path: 'datasets'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

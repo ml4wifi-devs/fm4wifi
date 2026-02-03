@@ -6,9 +6,7 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 import logging
 from copy import deepcopy
 from functools import partial
-from glob import glob
 
-import grain
 import hydra
 import jax
 import jax.numpy as jnp
@@ -20,79 +18,8 @@ from omegaconf import OmegaConf
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.mmd import compute_mmd
-from lai4wifi.flow_matching.utils import gen_sample, random_tx, tx_to_jraph
-from lai4wifi.graphs.dataset import load_dataset
+from lai4wifi.flow_matching.utils import create_data_loader, gen_sample, jax_repeat, prepare_context, random_tx, tx_to_jraph
 from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch, unbatch
-
-
-def prepare_context(context, encode_fn):
-    batched = make_batch(context)
-    encoded = encode_fn(batched)
-    unbatched = unbatch(encoded)
-    ctx = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *unbatched)
-    return unbatched[0]._replace(edges=ctx.edges, nodes=ctx.nodes, globals=ctx.globals)
-
-
-def draw_configurations(dataset_item, n_timesteps, key, encode_fn):
-    idx_key, *ctx_keys = jax.random.split(key, n_timesteps + 2)
-    
-    target_idx = jax.random.choice(idx_key, len(dataset_item.configurations))
-    target_conf = dataset_item.configurations[target_idx]
-    context = []
-    
-    for i in range(n_timesteps):
-        tx_key, sim_key = jax.random.split(ctx_keys[i])
-        tx = random_tx(tx_key, dataset_item.scenario)
-        _, _, internals = dataset_item.scenario(sim_key, *tx, return_internals=True)
-        context.append(tx_to_jraph(dataset_item.scenario, *tx, internals))
-        
-    context = prepare_context(context, encode_fn)
-
-    all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context, target_conf)
-    return target_conf._replace(
-        edges=all_desc.edges,
-        nodes=all_desc.nodes,
-        globals=all_desc.globals
-    )
-
-
-class DataSource(grain.sources.RandomAccessDataSource):
-    def __init__(self, dataset_path, filter_fn=None):
-        if filter_fn is None:
-            filter_fn = lambda _: True
-            
-        paths = [p for p in glob(f'{dataset_path}/*.pkl.lz4')]
-        paths = list(filter(filter_fn, paths))
-        self._dataset = sum((load_dataset(p) for p in paths), start=[])
-        self._dataset = sum((d.configurations for d in self._dataset), start=[])
-
-    def __len__(self):
-        return len(self._dataset)
-
-    def __getitem__(self, idx):
-        return self._dataset[idx]
-
-
-def create_data_loader(source, batch_size, seed, map_fn, batch_fn, num_workers=0):
-    ds = grain.MapDataset.source(source).seed(seed).shuffle()
-    ds = ds.map(map_fn)
-    ds = ds.to_iter_dataset()
-    ds = ds.batch(batch_size, batch_fn=batch_fn)
-    ds = ds.mp_prefetch(grain.MultiprocessingOptions(num_workers, per_worker_buffer_size=16))
-    return ds
-
-
-def load(dataset_path, batch_size, seed, filter_fn=None, map_fn=None, batch_fn=make_batch):
-    if map_fn is None:
-        map_fn = lambda x: x
-    
-    source = DataSource(dataset_path, filter_fn)
-
-    while True:
-        for batch in create_data_loader(source, batch_size, seed, map_fn, batch_fn):
-            yield batch
-        seed += 1
 
 
 def filter_fn_factory(val):
@@ -106,15 +33,27 @@ def map_fn_factory(n_timesteps, encode_fn, seed):
     key_state = {'key': jax.random.PRNGKey(seed)}
 
     def map_fn(item):
-        key_state['key'], subkey = jax.random.split(key_state['key'])
-        return draw_configurations(item, n_timesteps, subkey, encode_fn)
+        with jax.default_device(jax.devices('cpu')[0]):
+            key_state['key'], key = jax.random.split(key_state['key'])
+            target_conf, scenario = item
+            context = []
+        
+            for _ in range(n_timesteps):
+                key, tx_key, sim_key = jax.random.split(key, 3)
+                tx = random_tx(tx_key, scenario)
+                _, _, internals = scenario(sim_key, *tx, return_internals=True)
+                context.append(tx_to_jraph(scenario, *tx, internals))
+            
+            context = prepare_context(context, encode_fn)
+
+            all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context, target_conf)
+            return target_conf._replace(
+                edges=all_desc.edges,
+                nodes=all_desc.nodes,
+                globals=all_desc.globals
+            )
 
     return map_fn
-
-
-@partial(jax.jit, static_argnames=['axis', 'total_repeat_length'])
-def jax_repeat(a, repeats, axis, total_repeat_length):
-    return jnp.repeat(a, repeats, axis, total_repeat_length=total_repeat_length)
 
 
 def draw_t(key, batch, schedule='uniform'):
@@ -185,8 +124,12 @@ def main(cfg):
     encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
 
     map_fn = map_fn_factory(cfg.model.n_timesteps, encode_fn, cfg.train.seed)
-    data = load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn)
-    val_data = iter(load(cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=True), map_fn=map_fn))
+    data = create_data_loader(
+        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn
+    )
+    val_data = iter(create_data_loader(
+        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=True), map_fn=map_fn
+    ))
 
     sample = next(iter(data))
     sample = (sample, jnp.zeros((sample.edges.shape[0], 1)))
@@ -215,14 +158,13 @@ def main(cfg):
         wandb.init(project='lai4wifi', name=cfg.name)
 
     for step, batch in zip(range(cfg.train.n_steps), data):
-        log_dict = {}
+        log_dict = {'step': step}
 
         train_key, subkey = jax.random.split(train_key)
         params, opt_state, loss = step_fn(params, opt_state, subkey, batch)
         ema_params = optax.incremental_update(params, ema_params, 1.0 - cfg.optimizer.ema_decay)
 
-        log_dict['step'] = step
-        log_dict['train/loss'] = loss.item()
+        log_dict['train/loss'] = loss
 
         if step % cfg.train.val.freq == 0 or step == cfg.train.n_steps - 1:
             val_loss, val_loss_ema = 0.0, 0.0
@@ -230,10 +172,8 @@ def main(cfg):
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
                 val_batch = next(val_data)
-                loss = loss_fn(params, subkey, val_batch)
-                loss_ema = loss_fn(ema_params, subkey, val_batch)
-                val_loss += loss.item()
-                val_loss_ema += loss_ema.item()
+                val_loss += loss_fn(params, subkey, val_batch)
+                val_loss_ema += loss_fn(ema_params, subkey, val_batch)
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
             log_dict['val/loss_ema'] = val_loss_ema / cfg.train.val.n_steps
@@ -245,8 +185,8 @@ def main(cfg):
             mmd_val = mmd_fn(params, mmd_batch, mmd_subkey, cfg.train.mmd.n_samples)
             mmd_val_ema = mmd_fn(ema_params, mmd_batch, mmd_ema_subkey, cfg.train.mmd.n_samples)
             
-            log_dict['val/mmd'] = mmd_val.item()
-            log_dict['val/mmd_ema'] = mmd_val_ema.item()
+            log_dict['val/mmd'] = mmd_val
+            log_dict['val/mmd_ema'] = mmd_val_ema
 
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
             logging.info(log_dict)

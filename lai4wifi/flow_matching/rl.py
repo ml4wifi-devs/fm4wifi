@@ -20,8 +20,8 @@ from omegaconf import OmegaConf
 from tqdm import trange
 
 from lai4wifi.flow_matching.model import FlowMatching
-from lai4wifi.flow_matching.training import draw_t, jax_repeat, noisy_example, prepare_context
-from lai4wifi.flow_matching.utils import connections_to_tx, random_tx, tx_to_action, tx_to_jraph
+from lai4wifi.flow_matching.training import draw_t, noisy_example
+from lai4wifi.flow_matching.utils import connections_to_tx, jax_repeat, prepare_context, random_tx, tx_to_action, tx_to_jraph
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch, unbatch
 
@@ -241,9 +241,9 @@ def main(cfg):
                 fm_params, opt_state, subkey, batch, batch_rewards, fm_params_old
             )
 
-            loss_val += loss.item()
-            gn_val += grad_norm.item()
-            pd_val += param_dist.item()
+            loss_val += loss
+            gn_val += grad_norm
+            pd_val += param_dist
 
         fm_params_old = optax.incremental_update(fm_params, fm_params_old, step_size=max(1 - step / cfg.train.n_steps, 0.5))
 
@@ -252,16 +252,16 @@ def main(cfg):
         tx = connections_to_tx(EVAL_SCENARIO.associations, tx_key, decode_fn(z))
         data_rate, _, internals = EVAL_SCENARIO(sim_key, *tx, return_internals=True)
 
-        log_dict = {}
-        log_dict['step'] = step
-        log_dict['rl/loss'] = loss_val / grad_steps
-        log_dict['rl/grad_norm'] = gn_val / grad_steps
-        log_dict['rl/mean_reward'] = rewards_raw.mean()
-        log_dict['rl/param_dist'] = pd_val / grad_steps
-        log_dict['sim/data_rate'] = data_rate.item()
-        log_dict['sim/actions'] = tx_to_action(EVAL_SCENARIO.associations, internals, *tx)
-
         if step % cfg.train.log.freq == 0 or step == cfg.train.n_steps - 1:
+            log_dict = {
+                'step': step,
+                'rl/loss': loss_val / grad_steps,
+                'rl/grad_norm': gn_val / grad_steps,
+                'rl/mean_reward': rewards_raw.mean(),
+                'rl/param_dist': pd_val / grad_steps,
+                'sim/data_rate': data_rate,
+                'sim/actions': tx_to_action(EVAL_SCENARIO.associations, internals, *tx),
+            }
             logging.info(log_dict)
             if cfg.train.log.type == 'wandb':
                 wandb.log(log_dict)
