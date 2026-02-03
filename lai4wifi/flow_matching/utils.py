@@ -242,7 +242,10 @@ def default_map_fn(item):
     return graph
 
 
-def create_data_loader(dataset_path, batch_size, seed, filter_fn=None, map_fn=default_map_fn, batch_fn=make_batch, num_workers=8):
+def create_data_loader(
+    dataset_path, batch_size, seed, 
+    filter_fn=None, map_fn=default_map_fn, batch_fn=make_batch, num_workers=0
+):
     source = DataSource(dataset_path, filter_fn)
     ds = grain.MapDataset.source(source)
     ds = ds.seed(seed)
