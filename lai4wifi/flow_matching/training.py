@@ -46,11 +46,10 @@ def map_fn_factory(n_timesteps, encode_fn, seed):
             
             context = prepare_context(context, encode_fn)
 
-            all_desc = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context, target_conf)
             return target_conf._replace(
-                edges=all_desc.edges,
-                nodes=all_desc.nodes,
-                globals=all_desc.globals
+                edges=jnp.concatenate([context.edges, target_conf.edges[:, None]], axis=1),
+                nodes=jnp.concatenate([context.nodes, target_conf.nodes[:, None]], axis=1),
+                globals=jnp.concatenate([context.globals, target_conf.globals[:, None]], axis=1)
             )
 
     return map_fn
