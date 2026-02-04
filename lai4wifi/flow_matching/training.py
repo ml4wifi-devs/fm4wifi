@@ -123,7 +123,7 @@ def main(cfg):
     gnn = GnnAutoencoder(**gnn_cfg.model)
     encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
 
-    map_fn = map_fn_factory(cfg.model.n_timesteps, encode_fn, cfg.train.seed)
+    map_fn = map_fn_factory(cfg.train.n_timesteps, encode_fn, cfg.train.seed)
     data = create_data_loader(
         cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn
     )
