@@ -3,7 +3,7 @@ defaults:
   - optimizer: rl
   - train: rl
 name: flow_matching_rl
-fm_path: 'runs/flow_matching_base'
+fm_path: 'runs/flow_matching_small'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

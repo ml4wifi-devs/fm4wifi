@@ -114,7 +114,7 @@ def run_scenario(
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--checkpoint', type=str, default='runs/flow_matching_base')
+    args.add_argument('--checkpoint', type=str, default='runs/flow_matching_small')
     args.add_argument('--surrogate', type=str)
     args.add_argument('--n_reps', type=int, default=1)
     args.add_argument('--n_samples_eval', type=int, default=1)

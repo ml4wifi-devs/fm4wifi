@@ -43,7 +43,7 @@ def load_model(ckpt_path):
 
 
 if __name__ == '__main__':
-    model, params = load_model('../graphs/runs/gnn_ae_base')
+    model, params = load_model('../graphs/runs/gnn_ae_small')
     convert_dataset('../graphs/datasets/f_opt_dataset.pkl.lz4', 'datasets/f_opt_dataset.pkl.lz4', model, params)
     convert_dataset('../graphs/datasets/f_opt_val_dataset.pkl.lz4', 'datasets/f_opt_val_dataset.pkl.lz4', model, params)
     convert_dataset('../graphs/datasets/t_opt_dataset.pkl.lz4', 'datasets/t_opt_dataset.pkl.lz4', model, params)

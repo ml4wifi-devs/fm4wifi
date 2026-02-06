@@ -1,8 +1,0 @@
-gnn_layers: 2
-dim: 16
-ff_dim: 32
-n_layers: 1
-n_heads: 2
-drop_rate: 0.2
-embed_features: 16
-dtype: "float64"

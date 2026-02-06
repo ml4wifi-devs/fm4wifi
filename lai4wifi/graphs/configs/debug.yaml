@@ -1,7 +1,7 @@
 defaults:
   - _self_
-  - model: debug
-  - optimizer: debug
+  - model: tiny
+  - optimizer: tiny
   - train: debug
 name: gnn_ae_debug
 dataset_path: 'datasets'

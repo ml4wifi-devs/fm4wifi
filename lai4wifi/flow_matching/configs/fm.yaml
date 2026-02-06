@@ -1,11 +1,11 @@
 defaults:
   - _self_
-  - model: base
-  - optimizer: base
+  - model: small
+  - optimizer: small
   - train: base
-name: flow_matching_base
+name: flow_matching_small
 dataset_path: 'datasets'
-gnn_path: '../graphs/runs/gnn_ae_base'
+gnn_path: '../graphs/runs/gnn_ae_small'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

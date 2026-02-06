@@ -1,11 +1,11 @@
 defaults:
   - _self_
-  - model: debug
-  - optimizer: debug
+  - model: tiny
+  - optimizer: tiny
   - train: debug
 name: surrogate_debug
-dataset_path: '../graphs/datasets'
-gnn_path: '../graphs/runs/gnn_ae_base'
+dataset_path: 'datasets'
+gnn_path: '../graphs/runs/gnn_ae_debug'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -1,11 +1,11 @@
 defaults:
   - _self_
-  - model: debug
-  - optimizer: debug
+  - model: tiny
+  - optimizer: tiny
   - train: debug
 name: flow_matching_debug
 dataset_path: 'datasets'
-gnn_path: '../graphs/runs/gnn_ae_base'
+gnn_path: '../graphs/runs/gnn_ae_small'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
