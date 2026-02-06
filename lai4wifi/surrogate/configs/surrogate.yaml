@@ -4,7 +4,7 @@ defaults:
   - optimizer: small
   - train: base
 name: surrogate
-dataset_path: 'datasets'
+dataset_path: '../graphs/datasets'
 gnn_path: '../graphs/runs/gnn_ae_small'
 hydra:
   run:
