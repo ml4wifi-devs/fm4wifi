@@ -14,11 +14,12 @@ from tqdm import tqdm, trange
 
 from lai4wifi.flow_matching.sim import eval_with_sim, eval_with_surrogate
 from lai4wifi.flow_matching.utils import TEST_SCENARIOS, random_tx, tx_to_action, tx_to_jraph
+from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 from lai4wifi.surrogate.model import SurrogateModel
 
 
-def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, ideal_mcs, surrogate_fn):
+def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, ideal_mcs, surrogate_fn, encode_fn=None):
     key = jax.random.PRNGKey(seed)
     runs = []
     actions = []
@@ -40,7 +41,7 @@ def run_scenario(scenario, n_reps, n_steps, n_samples_eval, seed, ideal_mcs, sur
             configs = make_batch(graphs)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn, determinstic=True)
+                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn, encode_fn, determinstic=True)
             else:
                 best = eval_with_sim(scenario, configs, eval_key, deterministic=True)
             
@@ -75,14 +76,22 @@ if __name__ == '__main__':
 
         surrogate = SurrogateModel(**cfg.model)
         surrogate_fn = jax.jit(partial(surrogate.apply, s_params, training=False))
+
+        gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
+        with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
+            gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+
+        gnn = GnnAutoencoder(**gnn_cfg.model)
+        encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
     else:
         surrogate_fn = None
+        encode_fn = None
 
     all_results = []
 
     for scenario in tqdm(TEST_SCENARIOS, desc='Scenarios'):
         runs, actions = run_scenario(
-            scenario, args.n_reps, scenario.n_steps, args.n_samples_eval, args.seed, args.ideal_mcs, surrogate_fn
+            scenario, args.n_reps, scenario.n_steps, args.n_samples_eval, args.seed, args.ideal_mcs, surrogate_fn, encode_fn
         )
         all_results.append([{
             'runs': runs,

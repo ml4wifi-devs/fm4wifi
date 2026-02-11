@@ -5,11 +5,11 @@ os.environ['JAX_ENABLE_X64'] = 'True'
 
 import logging
 from dataclasses import replace
+from functools import partial
 
 import hydra
 import jax
 import jax.numpy as jnp
-import numpy as np
 import jraph
 import optax
 import orbax.checkpoint as ocp
@@ -19,6 +19,7 @@ from omegaconf import OmegaConf
 from lai4wifi.flow_matching.utils import create_data_loader
 from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.surrogate.utils import RATE_MEAN, RATE_STD, calculate_data_rate
+from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch
 
 
@@ -34,9 +35,13 @@ def map_fn(item):
         return graph, rate
 
 
-def batch_fn(batch):
-    graphs, rates = zip(*batch)
-    return make_batch(graphs), np.asarray(list(rates) + [0.0])
+def batch_fn_factory(encode_fn):
+    def batch_fn(batch):
+        graphs, rates = zip(*batch)
+        graph = make_batch(graphs)
+        graph = encode_fn(graph)
+        return graph, jnp.asarray(list(rates) + [0.0])
+    return batch_fn
 
 
 @hydra.main(config_path='configs', config_name='surrogate', version_base=None)
@@ -88,6 +93,14 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key = jax.random.split(key, 3)
 
+    gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
+    with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
+        gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+
+    gnn = GnnAutoencoder(**gnn_cfg.model)
+    encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
+
+    batch_fn = batch_fn_factory(encode_fn)
     data = create_data_loader(
         cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn, batch_fn=batch_fn
     )

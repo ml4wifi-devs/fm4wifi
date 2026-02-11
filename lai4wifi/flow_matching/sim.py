@@ -37,7 +37,7 @@ def eval_with_sim(scenario, configs, key, deterministic=False):
     return best
 
 
-def eval_with_surrogate(scenario, configs, key, surrogate_fn, determinstic=False):
+def eval_with_surrogate(scenario, configs, key, surrogate_fn, encode_fn=None, determinstic=False):
     graphs, txs = [], []
 
     for zt in unbatch(configs):
@@ -47,6 +47,10 @@ def eval_with_surrogate(scenario, configs, key, surrogate_fn, determinstic=False
         txs.append(tx)
 
     graphs = make_batch(graphs)
+
+    if encode_fn is not None:
+        graphs = encode_fn(graphs)
+
     pred = surrogate_fn(graphs)
 
     mask = jraph.get_graph_padding_mask(graphs)
@@ -94,7 +98,7 @@ def run_scenario(
             configs = decode_fn(z_eval)
 
             if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn)
+                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn, encode_fn)
             else:
                 best = eval_with_sim(scenario, configs, eval_key)
             
