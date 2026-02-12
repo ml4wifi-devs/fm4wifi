@@ -5,7 +5,7 @@ defaults:
   - train: base
 name: flow_matching_small
 dataset_path: 'datasets'
-gnn_path: '../graphs/runs/gnn_ae_small'
+gnn_path: '../graphs/runs/gnn_b0.01_medium'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -5,7 +5,7 @@ defaults:
   - train: debug
 name: flow_matching_debug
 dataset_path: 'datasets'
-gnn_path: '../graphs/runs/gnn_ae_small'
+gnn_path: '../graphs/runs/gnn_ae_debug'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

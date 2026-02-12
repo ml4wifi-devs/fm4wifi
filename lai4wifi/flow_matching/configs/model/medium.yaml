@@ -1,6 +1,6 @@
 gnn_layers: 3
-dim: 64
-ff_dim: 128
+dim: 72
+ff_dim: 144
 n_layers: 2
 n_heads: 4
 drop_rate: 0.1
