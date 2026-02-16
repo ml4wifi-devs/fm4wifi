@@ -143,6 +143,7 @@ def main(cfg):
 
     data = load_dataset(cfg.dataset_path)
     val_data = load_dataset(cfg.val_dataset_path)
+    val_data_idx = 0
     sample = (data[0], jnp.zeros((data[0].edges.shape[0], 1)))
 
     model = FlowMatching(**cfg.model)
@@ -181,7 +182,8 @@ def main(cfg):
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey, acc_subkey, acc_ema_subkey = jax.random.split(val_key, 4)
-                val_batch = next(val_data)
+                val_batch = val_data[val_data_idx]
+                val_data_idx = (val_data_idx + 1) % len(val_data)
                 val_loss += loss_fn(params, subkey, val_batch)
                 val_loss_ema += loss_fn(ema_params, subkey, val_batch)
                 na_acc, pred_acc = accuracy_fn(params, acc_subkey, val_batch)
@@ -200,7 +202,8 @@ def main(cfg):
 
         if cfg.train.mmd.enabled and (step % cfg.train.mmd.freq == 0 or step == cfg.train.n_steps - 1):
             mmd_key, mmd_subkey, mmd_ema_subkey = jax.random.split(mmd_key, 3)
-            mmd_batch = next(val_data)
+            mmd_batch = val_data[val_data_idx]
+            val_data_idx = (val_data_idx + 1) % len(val_data)
             
             mmd_val = mmd_fn(params, mmd_batch, mmd_subkey, cfg.train.mmd.n_samples)
             mmd_val_ema = mmd_fn(ema_params, mmd_batch, mmd_ema_subkey, cfg.train.mmd.n_samples)
