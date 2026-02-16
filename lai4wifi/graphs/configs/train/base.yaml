@@ -10,5 +10,5 @@ val:
 n_steps: 3000
 batch_size: 128
 loss_weights: [1, 1, 1, 1, 1, 1, 1]
-kl_loss_weight: 0.0
+kl_loss_weight: 0.01
 seed: 42

@@ -1,9 +1,9 @@
 defaults:
   - _self_
-  - model: small
-  - optimizer: small
+  - model: medium
+  - optimizer: medium
   - train: base
-name: gnn_ae_small
+name: gnn_b0.01_medium
 dataset_path: 'datasets'
 hydra:
   run:
