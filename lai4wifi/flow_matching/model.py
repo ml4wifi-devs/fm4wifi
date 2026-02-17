@@ -151,27 +151,14 @@ class FlowMatching(nn.Module):
         return x
 
     def gen(self, context, n_steps=10):
-        def heun_step(unet, x, t):
+        def scan_fn(unet, x, t):
             cx = context._replace(
                 edges=jnp.concatenate([context.edges, x.edges[:, None]], axis=1),
                 nodes=jnp.concatenate([context.nodes, x.nodes[:, None]], axis=1),
                 globals=jnp.concatenate([context.globals, x.globals[:, None]], axis=1)
             )
-            t_edges = jnp.broadcast_to(t, (x.edges.shape[0], 1))
-
-            v1 = unet(cx, t_edges, training=False)
-            x_euler = x._replace(edges=x.edges + v1.edges * dt)
-
-            cx_euler = context._replace(
-                edges=jnp.concatenate([context.edges, x_euler.edges[:, None]], axis=1),
-                nodes=jnp.concatenate([context.nodes, x_euler.nodes[:, None]], axis=1),
-                globals=jnp.concatenate([context.globals, x_euler.globals[:, None]], axis=1)
-            )
-            t_next = jnp.broadcast_to(jnp.clip(t + dt, 0.0, 1.0), (x.edges.shape[0], 1))
-
-            v2 = unet(cx_euler, t_next, training=False)
-            x = x._replace(edges=x.edges + (v1.edges + v2.edges) * dt / 2)
-
+            v = unet(cx, t, training=False)
+            x = x._replace(edges=x.edges + v.edges / n_steps)
             return x, None
 
         key = self.make_rng('lai')
@@ -182,10 +169,7 @@ class FlowMatching(nn.Module):
         z_globals = jax.random.normal(globals_key, (context.globals.shape[0], context.globals.shape[-1]), dtype=context.globals.dtype)
         z = context._replace(edges=z_edges, nodes=z_nodes, globals=z_globals)
 
-        dt = 1.0 / n_steps
-        timesteps = jnp.linspace(0.0, 1.0 - dt, n_steps)
-
-        scan = nn.scan(heun_step, variable_broadcast='params')
-        x, _ = scan(self, z, timesteps)
+        scan = nn.scan(scan_fn, variable_broadcast='params')
+        x, _ = scan(self, z, jnp.linspace(0.0, 1.0, n_steps, endpoint=False))
 
         return clear_graph(x)

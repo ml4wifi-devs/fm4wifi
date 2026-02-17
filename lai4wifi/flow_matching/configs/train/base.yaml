@@ -13,5 +13,5 @@ mmd:
   n_samples: 5
 batch_size: 32
 n_steps: 5000
-n_timesteps: 7
+n_timesteps: 1
 seed: 42
