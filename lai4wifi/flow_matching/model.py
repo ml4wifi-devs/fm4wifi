@@ -150,7 +150,7 @@ class FlowMatching(nn.Module):
         x = jraph.GraphMapFeatures(embed_edge_fn=make_embed_fn(self.embed_features, self.dtype))(x)
         return x
 
-    def gen(self, context, n_steps=10):
+    def gen(self, context, n_steps=6):
         def scan_fn(unet, x, t):
             cx = context._replace(
                 edges=jnp.concatenate([context.edges, x.edges[:, None]], axis=1),
