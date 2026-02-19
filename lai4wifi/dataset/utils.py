@@ -81,7 +81,7 @@ class DatasetItem:
 N_TX_POWER_LEVELS = 4
 TX_POWER_DELTA = 3.0
 TX_POWER_LEVELS = np.array([DEFAULT_TX_POWER - i * TX_POWER_DELTA for i in range(N_TX_POWER_LEVELS)])
-MCS_VALUES = DATA_RATES[20]  # Using 20 MHz channel width
+MCS_VALUES = DATA_RATES[80]  # Using 80 MHz channel width
 
 
 def rate_to_mcs(rate):
@@ -106,7 +106,7 @@ def draw_realizations(key, scenario_fn, param_ranges):
     *param_keys, seed_key = jax.random.split(key, len(param_ranges) + 1)
     params = {p: jax.random.randint(k, (), *v) for (p, v), k in zip(param_ranges.items(), param_keys)}
     seed = jax.random.randint(seed_key, (), 0, 2**30)
-    (scenario, _), *_ = scenario_fn(seed=seed, **params).split_scenario()
+    (scenario, _), *_ = scenario_fn(seed=seed, channel_width=80, **params).split_scenario()
     yield DatasetItem(scenario, configurations=[])
 
 

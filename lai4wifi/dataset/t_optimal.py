@@ -24,7 +24,8 @@ def draw_configuration(n_configurations, key, dataset_item):
         max_tx_power=TX_POWER_LEVELS[0],
         min_tx_power=TX_POWER_LEVELS[-1],
         opt_type=OptimizationType.SUM,
-        solver=plp.CPLEX_CMD(msg=False, threads=24)
+        solver=plp.CPLEX_CMD(msg=False),
+        channel_width=80
     )
     try:
         configurations, _ = solver(path_loss, associations)

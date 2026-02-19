@@ -9,7 +9,7 @@ RATE_MEAN = 207.1
 RATE_STD = 158.8
 
 
-def select_best_configuration(logits, means, scales, risk_averse=False, risk_factor=1.0):
+def select_best_configuration(logits, means, scales, risk_averse=True, risk_factor=2.5):
     probs = jax.nn.softmax(logits, axis=-1)
     expected_value = jnp.sum(probs * means, axis=-1)
     

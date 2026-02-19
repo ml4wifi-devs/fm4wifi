@@ -28,7 +28,8 @@ def run_f_optimal(scenario):
         max_tx_power=TX_POWER_LEVELS[0],
         min_tx_power=TX_POWER_LEVELS[-1],
         opt_type=OptimizationType.MAX_MIN,
-        solver=plp.CPLEX_CMD(msg=False, threads=24)
+        solver=plp.CPLEX_CMD(msg=False),
+        channel_width=80
     )
     
     _, data_rate = solver(path_loss, associations)
@@ -46,7 +47,8 @@ def run_t_optimal(scenario):
         max_tx_power=TX_POWER_LEVELS[0],
         min_tx_power=TX_POWER_LEVELS[-1],
         opt_type=OptimizationType.SUM,
-        solver=plp.CPLEX_CMD(msg=False, threads=24)
+        solver=plp.CPLEX_CMD(msg=False),
+        channel_width=80
     )
     
     _, data_rate = solver(path_loss, associations)
