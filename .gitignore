@@ -173,6 +173,5 @@ cython_debug/
 # Project files
 .vscode/
 wandb/
-runs/
+.hydra/
 lai4wifi/flow_matching/datasets
-lai4wifi/surrogate/datasets
