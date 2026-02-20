@@ -11,8 +11,8 @@ from lai4wifi.graphs.attributes import *
 
 
 CCA_THRESHOLD = -82.0
-RSSI_MEAN = -60.0
-RSSI_STD = 20.0
+RSSI_MEAN = -51.6
+RSSI_STD = 14.3
 RSSI_THR = (CCA_THRESHOLD - RSSI_MEAN) / RSSI_STD
 
 

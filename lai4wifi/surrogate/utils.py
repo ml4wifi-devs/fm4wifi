@@ -5,8 +5,8 @@ from lai4wifi.graphs.attributes import IsSelected
 from lai4wifi.dataset.utils import MCS_VALUES
 
 
-RATE_MEAN = 207.1
-RATE_STD = 158.8
+RATE_MEAN = 657.2
+RATE_STD = 462.2
 
 
 def select_best_configuration(logits, means, scales, risk_averse=True, risk_factor=2.5):
