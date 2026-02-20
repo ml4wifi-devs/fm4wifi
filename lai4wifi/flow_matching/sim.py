@@ -22,96 +22,87 @@ from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.surrogate.utils import select_best_configuration
 
 
-def eval_with_sim(scenario, configs, key, deterministic=False):
-    best, best_val = None, float('-inf')
-
-    for zt in unbatch(configs):
-        key, tx_key, scenario_key = jax.random.split(key, 3)
-        tx = connections_to_tx(scenario.associations, tx_key, zt, deterministic)
-        data_rate, _ = scenario(scenario_key, *tx, return_internals=False)
-
-        if data_rate > best_val:
-            best = tx
-            best_val = data_rate
-
-    return best
-
-
-def eval_with_surrogate(scenario, configs, key, surrogate_fn, encode_fn=None, determinstic=False):
-    graphs, txs = [], []
-
-    for zt in unbatch(configs):
-        key, tx_key = jax.random.split(key)
-        tx = connections_to_tx(scenario.associations, tx_key, zt, determinstic)
-        graphs.append(tx_to_jraph(scenario, *tx))
-        txs.append(tx)
-
-    graphs = make_batch(graphs)
-
-    if encode_fn is not None:
-        graphs = encode_fn(graphs)
-
-    pred = surrogate_fn(graphs)
-
-    mask = jraph.get_graph_padding_mask(graphs)
-    pred = jax.tree.map(lambda x: x[mask], pred)
-    best_idx, scores = select_best_configuration(*pred)
-    
-    return txs[best_idx.item()]
-
-
 def run_scenario(
-        scenario, n_reps, n_steps, n_timesteps, n_samples_eval, seed, ideal_mcs, 
-        gen_fn, encode_fn, decode_fn, surrogate_fn
+        scenario, n_steps, n_timesteps, n_samples_eval, seed, ideal_mcs, deterministic,
+        gen_fn, encode_fn, decode_fn, surrogate_fn, batch_size
 ):
     key = jax.random.PRNGKey(seed)
-    runs = []
-    actions = []
+    total_contexts = n_steps * n_timesteps
+    context_graphs_raw = []
 
-    for _ in range(n_reps):
-        scenario.reset()
-        runs.append([])
-        actions.append([])
-        context, internals_ctx = [], []
-
-        for _ in range(n_timesteps + n_steps):
+    with jax.default_device(jax.devices('cpu')[0]):
+        for _ in trange(total_contexts, desc='Context generation'):
             key, tx_key, sim_key = jax.random.split(key, 3)
             tx = random_tx(tx_key, scenario)
             _, _, internals = scenario(sim_key, *tx, return_internals=True)
-            context.append(tx_to_jraph(scenario, *tx, internals, encode_fn))
-            internals_ctx.append(internals)
+            context_graphs_raw.append(tx_to_jraph(scenario, *tx, internals))
 
-        for step in trange(n_steps, desc='Steps'):
-            key, fm_key, eval_key, scenario_key = jax.random.split(key, 4)
+    encoded_contexts = []
+    
+    for i in trange(0, len(context_graphs_raw), batch_size, desc='Encoding contexts'):
+        batch = make_batch(context_graphs_raw[i:i + batch_size])
+        encoded = encode_fn(batch)
+        encoded_contexts += unbatch(encoded)
+    
+    fm_inputs = []
 
-            all = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *context[step:step + n_timesteps])
-            x = context[0]._replace(
-                edges=all.edges,
-                nodes=all.nodes,
-                globals=all.globals
-            )
-            internals = internals_ctx[step + n_timesteps - 1]
+    for step in range(n_steps):
+        ctx_graphs = encoded_contexts[step * n_timesteps:(step + 1) * n_timesteps]
+        stacked = jax.tree.map(lambda *x: jnp.stack(x, axis=1), *ctx_graphs)
+        context = ctx_graphs[0]._replace(edges=stacked.edges, nodes=stacked.nodes, globals=stacked.globals)
+        fm_inputs += [context] * n_samples_eval
 
-            # https://arxiv.org/abs/2412.08296
-            x_eval = make_batch([x for _ in range(n_samples_eval)])
-            z_eval = gen_fn(x_eval, rngs=fm_key)
-            configs = decode_fn(z_eval)
+    decoded_candidates = []
 
-            if surrogate_fn is not None:
-                best = eval_with_surrogate(scenario, configs, eval_key, surrogate_fn, encode_fn)
-            else:
-                best = eval_with_sim(scenario, configs, eval_key)
-            
+    for i in trange(0, len(fm_inputs), batch_size, desc='FM generation'):
+        key, fm_key = jax.random.split(key)
+        batch = make_batch(fm_inputs[i:i + batch_size])
+        z = gen_fn(batch, rngs=fm_key)
+        decoded = decode_fn(z)
+        decoded_candidates += unbatch(decoded)
+
+    all_txs, surrogate_input_graphs = [], []
+
+    with jax.default_device(jax.devices('cpu')[0]):
+        for zt in tqdm(decoded_candidates, desc='Converting to tx'):
+            key, tx_key = jax.random.split(key)
+            tx = connections_to_tx(scenario.associations, tx_key, zt, deterministic)
+            all_txs.append(tx)
+            surrogate_input_graphs.append(tx_to_jraph(scenario, *tx))
+
+    all_scores = []
+
+    for i in trange(0, len(surrogate_input_graphs), batch_size, desc='Surrogate eval'):
+        batch = make_batch(surrogate_input_graphs[i:i + batch_size])
+        encoded = encode_fn(batch)
+        pred = surrogate_fn(encoded)
+
+        mask = jraph.get_graph_padding_mask(encoded)
+        logits, means, scales = jax.tree.map(lambda x: x[mask], pred)
+        _, scores = select_best_configuration(logits, means, scales)
+        all_scores.extend(scores.tolist())
+
+    scores_array = jnp.array(all_scores).reshape(n_steps, n_samples_eval)
+    best_indices = jnp.argmax(scores_array, axis=1)
+    runs, actions = [], []
+
+    with jax.default_device(jax.devices('cpu')[0]):
+        for step in trange(n_steps, desc='Final sim'):
+            best_idx = best_indices[step].item()
+            flat_idx = step * n_samples_eval + best_idx
+            best_tx = all_txs[flat_idx]
+
+            key, scenario_key = jax.random.split(key)
+
             if ideal_mcs:
-                best_tx, best_tx_power, _ = best
-                best = (best_tx, best_tx_power)
-                data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
-                best = (*best, internals.mcs)
+                best_tx_mat, best_tx_power, _ = best_tx
+                data_rate, _, internals = scenario(scenario_key, best_tx_mat, best_tx_power, return_internals=True)
+                best_tx = (best_tx_mat, best_tx_power, internals.mcs)
             else:
-                data_rate, _, internals = scenario(scenario_key, *best, return_internals=True)
+                data_rate, _, internals = scenario(scenario_key, *best_tx, return_internals=True)
 
-            runs[-1].append(data_rate.item())
-            actions[-1].append(tx_to_action(scenario.associations, internals, *best))
+            runs.append(data_rate.item())
+            actions.append(tx_to_action(scenario.associations, internals, *best_tx))
 
     return runs, actions
 
@@ -119,23 +110,21 @@ def run_scenario(
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--checkpoint', type=str, default='runs/flow_matching_small')
-    args.add_argument('--surrogate', type=str)
-    args.add_argument('--n_reps', type=int, default=1)
+    args.add_argument('--surrogate', type=str, required=True)
     args.add_argument('--n_samples_eval', type=int, default=1)
+    args.add_argument('--batch_size', type=int, default=64)
     args.add_argument('--ideal_mcs', default=False, action='store_true')
+    args.add_argument('--deterministic', default=False, action='store_true')
     args.add_argument('--output', type=str, default='all_results.json')
     args.add_argument('--seed', type=int, default=42)
     args = args.parse_args()
 
-    if args.surrogate is not None:
-        s_cfg = OmegaConf.load(os.path.join(args.surrogate, 'config.yaml'))
-        with ocp.CheckpointManager(os.path.abspath(args.surrogate), item_names=['params']) as ckpt_manager:
-            s_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+    s_cfg = OmegaConf.load(os.path.join(args.surrogate, 'config.yaml'))
+    with ocp.CheckpointManager(os.path.abspath(args.surrogate), item_names=['params']) as ckpt_manager:
+        s_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
 
-        surrogate = SurrogateModel(**s_cfg.model)
-        surrogate_fn = jax.jit(partial(surrogate.apply, s_params, training=False))
-    else:
-        surrogate_fn = None
+    surrogate = SurrogateModel(**s_cfg.model)
+    surrogate_fn = jax.jit(partial(surrogate.apply, s_params, training=False))
 
     fm_cfg = OmegaConf.load(os.path.join(args.checkpoint, 'config.yaml'))
     with ocp.CheckpointManager(os.path.abspath(args.checkpoint), item_names=['ema_params']) as ckpt_manager:
@@ -156,13 +145,14 @@ if __name__ == '__main__':
 
     for scenario in tqdm(TEST_SCENARIOS, desc='Scenarios'):
         runs, actions = run_scenario(
-            scenario, args.n_reps, scenario.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval, args.seed, 
-            args.ideal_mcs, gen_fn, encode_fn, decode_fn, surrogate_fn
+            scenario, scenario.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval,
+            args.seed, args.ideal_mcs, args.deterministic,
+            gen_fn, encode_fn, decode_fn, surrogate_fn, args.batch_size
         )
-        all_results.append([{
+        all_results.append({
             'runs': runs,
             'actions': actions
-        }])
+        })
 
     with open(args.output, 'w') as file:
         json.dump(all_results, file)
