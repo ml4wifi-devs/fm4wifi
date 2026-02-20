@@ -1,0 +1,41 @@
+name: gnn_b0.01_medium
+dataset_path: datasets
+model:
+  embed_features: 64
+  encoder_features:
+  - 128
+  - 64
+  decoder_features:
+  - 64
+  - 128
+  latent_features: 32
+  n_layers: 3
+  dtype: float64
+optimizer:
+  learning_rate: 5.0e-05
+  weight_decay: 0.01
+  b1: 0.95
+  b2: 0.95
+  grad_clip: 1.0
+train:
+  ckpt:
+    intermediate: false
+    freq: 500
+  log:
+    type: wandb
+    freq: 50
+  val:
+    n_steps: 10
+    freq: 100
+  n_steps: 3000
+  batch_size: 128
+  loss_weights:
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  - 1
+  kl_loss_weight: 0.01
+  seed: 42
