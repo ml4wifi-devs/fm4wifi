@@ -175,3 +175,4 @@ cython_debug/
 wandb/
 .hydra/
 lai4wifi/flow_matching/datasets
+archive/
