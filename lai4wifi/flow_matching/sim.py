@@ -22,9 +22,34 @@ from lai4wifi.surrogate.model import SurrogateModel
 from lai4wifi.surrogate.utils import select_best_configuration
 
 
+def select_configs(associations, all_txs, scores, n_samples_eval, step, min_top_configs):
+    step_scores = scores[step * n_samples_eval:(step + 1) * n_samples_eval]
+    sorted_indices = jnp.argsort(-step_scores)
+
+    all_stas = {sta for stas in associations.values() for sta in stas}
+    covered_stas = set()
+    selected = []
+
+    for rank, idx in enumerate(sorted_indices):
+        flat_idx = step * n_samples_eval + idx.item()
+        tx_matrix, *_ = all_txs[flat_idx]
+        _, cfg_stas = jnp.where(tx_matrix)
+        cfg_stas = set(cfg_stas.tolist())
+        new_stas = cfg_stas - covered_stas
+
+        if rank < min_top_configs or (new_stas and covered_stas != all_stas):
+            selected.append((flat_idx, step_scores[idx].item()))
+            covered_stas |= cfg_stas
+
+        if len(selected) >= min_top_configs and covered_stas >= all_stas:
+            break
+
+    return selected
+
+
 def run_scenario(
         scenario, n_steps, n_timesteps, n_samples_eval, seed, ideal_mcs, deterministic,
-        gen_fn, encode_fn, decode_fn, surrogate_fn, batch_size, use_simulator=False
+        gen_fn, encode_fn, decode_fn, surrogate_fn, batch_size, use_simulator, min_top_configs, n_eval_repeats
 ):
     key = jax.random.PRNGKey(seed)
     total_contexts = n_steps * n_timesteps
@@ -92,43 +117,59 @@ def run_scenario(
             _, scores = select_best_configuration(logits, means, scales)
             all_scores.extend(scores.tolist())
 
-    scores_array = jnp.array(all_scores).reshape(n_steps, n_samples_eval)
-    best_indices = jnp.argmax(scores_array, axis=1)
-    runs, actions = [], []
+    scores_array = jnp.array(all_scores)
+    all_results = []
 
     with jax.default_device(jax.devices('cpu')[0]):
         for step in trange(n_steps, desc='Final sim'):
-            best_idx = best_indices[step].item()
-            flat_idx = step * n_samples_eval + best_idx
-            best_tx = all_txs[flat_idx]
+            selected = select_configs(
+                scenario.associations, all_txs, scores_array,
+                n_samples_eval, step, min_top_configs
+            )
+            results = []
 
-            key, scenario_key = jax.random.split(key)
+            for flat_idx, score in selected:
+                eval_tx = all_txs[flat_idx]
+                repeats = []
 
-            if ideal_mcs:
-                best_tx_mat, best_tx_power, _ = best_tx
-                data_rate, _, internals = scenario(scenario_key, best_tx_mat, best_tx_power, return_internals=True)
-                best_tx = (best_tx_mat, best_tx_power, internals.mcs)
-            else:
-                data_rate, _, internals = scenario(scenario_key, *best_tx, return_internals=True)
+                for _ in range(n_eval_repeats):
+                    key, scenario_key = jax.random.split(key)
 
-            runs.append(data_rate.item())
-            actions.append(tx_to_action(scenario.associations, internals, *best_tx))
+                    if ideal_mcs:
+                        tx_mat, tx_power, _ = eval_tx
+                        data_rate, _, internals = scenario(scenario_key, tx_mat, tx_power, return_internals=True)
+                        eval_tx = (tx_mat, tx_power, internals.mcs)
+                    else:
+                        data_rate, _, internals = scenario(scenario_key, *eval_tx, return_internals=True)
 
-    return runs, actions
+                    repeats.append({
+                        'data_rate': data_rate.item(),
+                        'action': tx_to_action(scenario.associations, internals, *eval_tx)
+                    })
+
+                results.append({
+                    'score': score,
+                    'runs': repeats
+                })
+
+            all_results.append({'configs': results})
+
+    return all_results
 
 
 if __name__ == '__main__':
     args = ArgumentParser()
-    args.add_argument('--checkpoint', type=str, default='runs/flow_matching_small')
-    args.add_argument('--surrogate', type=str, default=None)
+    args.add_argument('--checkpoint', type=str, default='runs/fm_medium')
+    args.add_argument('--surrogate', type=str, default='../surrogate/runs/sur_medium')
     args.add_argument('--n_samples_eval', type=int, default=1)
     args.add_argument('--batch_size', type=int, default=64)
     args.add_argument('--ideal_mcs', default=False, action='store_true')
     args.add_argument('--deterministic', default=False, action='store_true')
-    args.add_argument('--use_simulator', default=False, action='store_true',
-                      help='Use simulator instead of surrogate model for candidate evaluation')
+    args.add_argument('--use_simulator', default=False, action='store_true')
     args.add_argument('--output', type=str, default='all_results.json')
     args.add_argument('--seed', type=int, default=42)
+    args.add_argument('--min_top_configs', type=int, default=1)
+    args.add_argument('--n_eval_repeats', type=int, default=10)
     args = args.parse_args()
 
     surrogate_fn = None
@@ -162,15 +203,11 @@ if __name__ == '__main__':
     all_results = []
 
     for scenario in tqdm(TEST_SCENARIOS, desc='Scenarios'):
-        runs, actions = run_scenario(
+        all_results.append(run_scenario(
             scenario, scenario.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval,
-            args.seed, args.ideal_mcs, args.deterministic,
-            gen_fn, encode_fn, decode_fn, surrogate_fn, args.batch_size, args.use_simulator
-        )
-        all_results.append({
-            'runs': runs,
-            'actions': actions
-        })
+            args.seed, args.ideal_mcs, args.deterministic, gen_fn, encode_fn, decode_fn, 
+            surrogate_fn, args.batch_size, args.use_simulator, args.min_top_configs, args.n_eval_repeats
+        ))
 
     with open(args.output, 'w') as file:
         json.dump(all_results, file)
