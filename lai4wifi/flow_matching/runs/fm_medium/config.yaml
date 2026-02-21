@@ -1,0 +1,38 @@
+name: fm_medium
+dataset_path: datasets/prebatched.pkl.lz4
+val_dataset_path: datasets/prebatched_val.pkl.lz4
+gnn_path: ../graphs/runs/gnn_b0.01_medium
+model:
+  gnn_layers: 3
+  dim: 72
+  ff_dim: 144
+  n_layers: 2
+  n_heads: 4
+  drop_rate: 0.1
+  embed_features: 32
+  dtype: float64
+optimizer:
+  learning_rate: 0.001
+  weight_decay: 0.01
+  b1: 0.95
+  b2: 0.95
+  grad_clip: 1.0
+  ema_decay: 0.999
+train:
+  ckpt:
+    intermediate: false
+    freq: 500
+  log:
+    type: wandb
+    freq: 20
+  val:
+    n_steps: 10
+    freq: 100
+  mmd:
+    enabled: true
+    freq: 200
+    n_samples: 5
+  batch_size: 32
+  n_steps: 5000
+  n_timesteps: 1
+  seed: 42
