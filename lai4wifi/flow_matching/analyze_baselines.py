@@ -5,6 +5,8 @@ from collections import defaultdict
 
 import numpy as np
 
+from lai4wifi.flow_matching.utils import TEST_SCENARIOS
+
 
 def jains_fairness(rates):
     rates = np.array(rates)
@@ -44,38 +46,48 @@ def analyze_solver(agent_data):
     return {'splits': splits_analysis}
 
 
-def analyze_h_mab(agent_data):
+def analyze_h_mab(agent_data, switch_steps):
     runs = agent_data['runs'][0]
     actions = agent_data['actions'][0]
     n_steps = len(runs)
 
-    window_size = min(n_steps, max(200, int(0.2 * n_steps)))
-    window_start = n_steps - window_size
-    window_runs = runs[window_start:]
-    window_actions = actions[window_start:]
+    boundaries = [0] + list(switch_steps) + [n_steps]
+    splits_analysis = []
 
-    all_stations = set()
-    for action in actions:
-        for vals in action.values():
-            all_stations.add(int(vals[0]))
+    for start, end in zip(boundaries[:-1], boundaries[1:]):
+        split_runs = runs[start:end]
+        split_actions = actions[start:end]
+        split_n = len(split_runs)
 
-    station_rate_sums = {sta: 0.0 for sta in all_stations}
-    for action in window_actions:
-        for vals in action.values():
-            sta = int(vals[0])
-            rate = vals[1]
-            station_rate_sums[sta] += rate
+        window_size = min(split_n, max(200, int(0.2 * split_n)))
+        window_start = split_n - window_size
+        window_runs = split_runs[window_start:]
+        window_actions = split_actions[window_start:]
 
-    n_window = len(window_actions)
-    per_station = {sta: station_rate_sums[sta] / n_window for sta in sorted(all_stations)}
-    rates_list = list(per_station.values())
+        all_stations = set()
+        for action in split_actions:
+            for vals in action.values():
+                all_stations.add(int(vals[0]))
 
-    return {
-        'mean_data_rate': float(np.mean(window_runs)),
-        'fairness': jains_fairness(rates_list),
-        'per_station': per_station,
-        'data_rates_in_time': runs,
-    }
+        station_rate_sums = {sta: 0.0 for sta in all_stations}
+        for action in window_actions:
+            for vals in action.values():
+                sta = int(vals[0])
+                rate = vals[1]
+                station_rate_sums[sta] += rate
+
+        n_window = len(window_actions)
+        per_station = {sta: station_rate_sums[sta] / n_window for sta in sorted(all_stations)}
+        rates_list = list(per_station.values())
+
+        splits_analysis.append({
+            'data_rate': float(np.mean(window_runs)),
+            'fairness': jains_fairness(rates_list),
+            'per_station': per_station,
+            'data_rates_in_time': split_runs,
+        })
+
+    return {'splits': splits_analysis}
 
 
 def analyze(input_path):
@@ -86,6 +98,8 @@ def analyze(input_path):
 
     for i, scenario_results in enumerate(all_results):
         scenario_analysis = {}
+        scenario = TEST_SCENARIOS[i]
+        switch_steps = getattr(scenario, 'switch_steps', [])
 
         for agent_data in scenario_results:
             name = agent_data['agent']
@@ -93,7 +107,7 @@ def analyze(input_path):
             if name in ('f_optimal', 't_optimal'):
                 scenario_analysis[name] = analyze_solver(agent_data)
             elif name == 'h_mab':
-                scenario_analysis[name] = analyze_h_mab(agent_data)
+                scenario_analysis[name] = analyze_h_mab(agent_data, switch_steps)
 
         analysis.append(scenario_analysis)
 

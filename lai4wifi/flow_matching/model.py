@@ -164,9 +164,9 @@ class FlowMatching(nn.Module):
         key = self.make_rng('lai')
         edges_key, nodes_key, globals_key = jax.random.split(key, 3)
 
-        z_edges = jax.random.normal(edges_key, (context.edges.shape[0], context.edges.shape[-1]), dtype=context.edges.dtype)
-        z_nodes = jax.random.normal(nodes_key, (context.nodes.shape[0], context.nodes.shape[-1]), dtype=context.nodes.dtype)
-        z_globals = jax.random.normal(globals_key, (context.globals.shape[0], context.globals.shape[-1]), dtype=context.globals.dtype)
+        z_edges = jax.random.normal(edges_key, (context.edges.shape[0], context.edges.shape[-1]), dtype=self.dtype)
+        z_nodes = jax.random.normal(nodes_key, (context.nodes.shape[0], context.nodes.shape[-1]), dtype=self.dtype)
+        z_globals = jax.random.normal(globals_key, (context.globals.shape[0], context.globals.shape[-1]), dtype=self.dtype)
         z = context._replace(edges=z_edges, nodes=z_nodes, globals=z_globals)
 
         scan = nn.scan(scan_fn, variable_broadcast='params')

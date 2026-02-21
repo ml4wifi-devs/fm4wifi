@@ -24,7 +24,7 @@ from lai4wifi.surrogate.utils import select_best_configuration
 
 def run_scenario(
         scenario, n_steps, n_timesteps, n_samples_eval, seed, ideal_mcs, deterministic,
-        gen_fn, encode_fn, decode_fn, surrogate_fn, batch_size
+        gen_fn, encode_fn, decode_fn, surrogate_fn, batch_size, use_simulator=False
 ):
     key = jax.random.PRNGKey(seed)
     total_contexts = n_steps * n_timesteps
@@ -61,26 +61,36 @@ def run_scenario(
         decoded = decode_fn(z)
         decoded_candidates += unbatch(decoded)
 
-    all_txs, surrogate_input_graphs = [], []
+    all_txs = []
 
     with jax.default_device(jax.devices('cpu')[0]):
         for zt in tqdm(decoded_candidates, desc='Converting to tx'):
             key, tx_key = jax.random.split(key)
             tx = connections_to_tx(scenario.associations, tx_key, zt, deterministic)
             all_txs.append(tx)
-            surrogate_input_graphs.append(tx_to_jraph(scenario, *tx))
 
     all_scores = []
 
-    for i in trange(0, len(surrogate_input_graphs), batch_size, desc='Surrogate eval'):
-        batch = make_batch(surrogate_input_graphs[i:i + batch_size])
-        encoded = encode_fn(batch)
-        pred = surrogate_fn(encoded)
+    if use_simulator:
+        with jax.default_device(jax.devices('cpu')[0]):
+            for i, tx in enumerate(tqdm(all_txs, desc='Simulator eval')):
+                key, sim_key = jax.random.split(key)
+                data_rate, _, _ = scenario(sim_key, *tx, return_internals=True)
+                all_scores.append(data_rate.item())
+    else:
+        surrogate_input_graphs = [
+            tx_to_jraph(scenario, *tx) for tx in tqdm(all_txs, desc='Building surrogate inputs')
+        ]
 
-        mask = jraph.get_graph_padding_mask(encoded)
-        logits, means, scales = jax.tree.map(lambda x: x[mask], pred)
-        _, scores = select_best_configuration(logits, means, scales)
-        all_scores.extend(scores.tolist())
+        for i in trange(0, len(surrogate_input_graphs), batch_size, desc='Surrogate eval'):
+            batch = make_batch(surrogate_input_graphs[i:i + batch_size])
+            encoded = encode_fn(batch)
+            pred = surrogate_fn(encoded)
+
+            mask = jraph.get_graph_padding_mask(encoded)
+            logits, means, scales = jax.tree.map(lambda x: x[mask], pred)
+            _, scores = select_best_configuration(logits, means, scales)
+            all_scores.extend(scores.tolist())
 
     scores_array = jnp.array(all_scores).reshape(n_steps, n_samples_eval)
     best_indices = jnp.argmax(scores_array, axis=1)
@@ -110,21 +120,29 @@ def run_scenario(
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('--checkpoint', type=str, default='runs/flow_matching_small')
-    args.add_argument('--surrogate', type=str, required=True)
+    args.add_argument('--surrogate', type=str, default=None)
     args.add_argument('--n_samples_eval', type=int, default=1)
     args.add_argument('--batch_size', type=int, default=64)
     args.add_argument('--ideal_mcs', default=False, action='store_true')
     args.add_argument('--deterministic', default=False, action='store_true')
+    args.add_argument('--use_simulator', default=False, action='store_true',
+                      help='Use simulator instead of surrogate model for candidate evaluation')
     args.add_argument('--output', type=str, default='all_results.json')
     args.add_argument('--seed', type=int, default=42)
     args = args.parse_args()
 
-    s_cfg = OmegaConf.load(os.path.join(args.surrogate, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(args.surrogate), item_names=['params']) as ckpt_manager:
-        s_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+    surrogate_fn = None
 
-    surrogate = SurrogateModel(**s_cfg.model)
-    surrogate_fn = jax.jit(partial(surrogate.apply, s_params, training=False))
+    if not args.use_simulator:
+        if args.surrogate is None:
+            raise ValueError('--surrogate is required when not using --use_simulator')
+
+        s_cfg = OmegaConf.load(os.path.join(args.surrogate, 'config.yaml'))
+        with ocp.CheckpointManager(os.path.abspath(args.surrogate), item_names=['params']) as ckpt_manager:
+            s_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+
+        surrogate = SurrogateModel(**s_cfg.model)
+        surrogate_fn = jax.jit(partial(surrogate.apply, s_params, training=False))
 
     fm_cfg = OmegaConf.load(os.path.join(args.checkpoint, 'config.yaml'))
     with ocp.CheckpointManager(os.path.abspath(args.checkpoint), item_names=['ema_params']) as ckpt_manager:
@@ -147,7 +165,7 @@ if __name__ == '__main__':
         runs, actions = run_scenario(
             scenario, scenario.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval,
             args.seed, args.ideal_mcs, args.deterministic,
-            gen_fn, encode_fn, decode_fn, surrogate_fn, args.batch_size
+            gen_fn, encode_fn, decode_fn, surrogate_fn, args.batch_size, args.use_simulator
         )
         all_results.append({
             'runs': runs,
