@@ -162,7 +162,7 @@ if __name__ == '__main__':
     args.add_argument('--checkpoint', type=str, default='runs/fm_medium')
     args.add_argument('--surrogate', type=str, default='../surrogate/runs/sur_medium')
     args.add_argument('--n_samples_eval', type=int, default=1)
-    args.add_argument('--batch_size', type=int, default=64)
+    args.add_argument('--batch_size', type=int, default=8)
     args.add_argument('--ideal_mcs', default=False, action='store_true')
     args.add_argument('--deterministic', default=False, action='store_true')
     args.add_argument('--use_simulator', default=False, action='store_true')
@@ -170,6 +170,7 @@ if __name__ == '__main__':
     args.add_argument('--seed', type=int, default=42)
     args.add_argument('--min_top_configs', type=int, default=1)
     args.add_argument('--n_eval_repeats', type=int, default=10)
+    args.add_argument('--n_steps', type=int, default=512)
     args = args.parse_args()
 
     surrogate_fn = None
@@ -203,11 +204,16 @@ if __name__ == '__main__':
     all_results = []
 
     for scenario in tqdm(TEST_SCENARIOS, desc='Scenarios'):
-        all_results.append(run_scenario(
-            scenario, scenario.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval,
-            args.seed, args.ideal_mcs, args.deterministic, gen_fn, encode_fn, decode_fn, 
-            surrogate_fn, args.batch_size, args.use_simulator, args.min_top_configs, args.n_eval_repeats
-        ))
+        split_results = []
+
+        for split_scenario, _ in scenario.split_scenario():
+            split_results.append([run_scenario(
+                split_scenario, args.n_steps, fm_cfg.train.n_timesteps, args.n_samples_eval,
+                args.seed, args.ideal_mcs, args.deterministic, gen_fn, encode_fn, decode_fn,
+                surrogate_fn, args.batch_size, args.use_simulator, args.min_top_configs, args.n_eval_repeats
+            )])
+
+        all_results.append({'splits': split_results})
 
     with open(args.output, 'w') as file:
         json.dump(all_results, file)
