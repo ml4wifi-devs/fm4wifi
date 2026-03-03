@@ -21,6 +21,7 @@ def select_best_configuration(logits, means, scales, risk_averse=True, risk_fact
         std_dev = jnp.sqrt(jnp.maximum(variance, 0.0))
         scores = expected_value - risk_factor * std_dev
         
+    scores = scores[:-1]
     best_idx = jnp.argmax(scores)
     return best_idx, scores
 

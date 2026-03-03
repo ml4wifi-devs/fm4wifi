@@ -8,8 +8,14 @@ from argparse import ArgumentParser
 from itertools import chain
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pulp as plp
+import simpy
+from joblib import Parallel, delayed
+from mapc_dcf.channel import Channel, TAU
+from mapc_dcf.nodes import AccessPoint
+from mapc_dcf.logger import Logger
 from mapc_mab import MapcAgentFactory
 from mapc_optimal import Solver, OptimizationType, positions_to_path_loss
 from reinforced_lib.agents.mab import UCB
@@ -92,11 +98,66 @@ def run_h_mab(scenario, seed=42, n_steps=2000):
     }
 
 
+def flatten_scenarios(scenarios):
+    scenarios_flattened = []
+
+    for scenario in scenarios:
+        str_repr = scenario.__str__()
+        list_of_scenarios = scenario.split_scenario()
+        for i, s in enumerate(list_of_scenarios):
+            suffix = f"_{chr(ord('a') + i)}" if len(list_of_scenarios) > 1 else ""
+            scenarios_flattened.append((s[0], s[1], f"{str_repr}{suffix}"))
+
+    return scenarios_flattened
+
+
+def run_dcf_single(key, run, scenario, sim_time, logger, spatial_reuse):
+    key, key_channel = jax.random.split(key)
+    des_env = simpy.Environment()
+    channel = Channel(key_channel, spatial_reuse, scenario.channel_width, scenario.pos, scenario.walls)
+    aps: dict[int, AccessPoint] = {}
+
+    for ap in scenario.associations:
+        key, key_ap = jax.random.split(key)
+        clients = jnp.array(scenario.associations[ap])
+        tx_power = scenario.tx_power[ap]
+        aps[ap] = AccessPoint(key_ap, ap, scenario.pos, tx_power, clients, channel, des_env, logger)
+        aps[ap].start_operation(run)
+    
+    des_env.run(until=(logger.warmup_length + sim_time))
+    logger.dump_acumulators(run)
+    del des_env
+
+
+def run_dcf(scenarios, seed, n_runs, warmup, spatial_reuse):
+    scenarios = flatten_scenarios(scenarios)
+    key = jax.random.PRNGKey(seed)
+    
+    job_dir = 'sr_results' if spatial_reuse else 'dcf_results'
+    sim_time = 1000 * TAU
+
+    for scenario, _, scenario_name in tqdm(scenarios):
+        logger = Logger(sim_time, warmup, os.path.join(job_dir, scenario_name))
+        Parallel(n_jobs=n_runs)(
+            delayed(run_dcf_single)(k, r, scenario, sim_time, logger, spatial_reuse)
+            for k, r in zip(jax.random.split(key, n_runs), range(1, n_runs + 1))
+        )
+        logger.shutdown({
+            "name": scenario_name,
+            "simulation_length": sim_time,
+            "warmup_length": warmup,
+            "n_runs": n_runs
+        })
+
+
 if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('-o', '--output', type=str, default='baseline_results.json')
     args.add_argument('--n_steps', type=int, default=2000)
     args.add_argument('--seed', type=int, default=42)
+    args.add_argument('--dcf_n_runs', type=int, default=5)
+    args.add_argument('--dcf_warmup', type=float, default=0.1)
+    args.add_argument('--spatial_reuse', action='store_true', default=False)
     args = args.parse_args()
 
     all_results = []
@@ -110,10 +171,12 @@ if __name__ == '__main__':
         result = run_solver(scenario, OptimizationType.SUM)
         scenario_results.append({'agent': 't_optimal', **result})
 
-        result = run_h_mab(scenario, seed=args.seed, n_steps=args.n_steps)
+        result = run_h_mab(scenario, seed=args.seed, n_steps=scenario.n_steps)
         scenario_results.append({'agent': 'h_mab', **result})
 
         all_results.append(scenario_results)
 
     with open(args.output, 'w') as file:
         json.dump(to_serializable(all_results), file)
+
+    run_dcf(TEST_SCENARIOS, args.seed, args.dcf_n_runs, args.dcf_warmup, args.spatial_reuse)
