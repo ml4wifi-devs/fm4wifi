@@ -1,5 +1,6 @@
 name: sur_medium
-dataset_path: ../graphs/datasets
+train_dataset_path: datasets/prebatched.pkl.lz4
+val_dataset_path: datasets/prebatched_val.pkl.lz4
 gnn_path: ../graphs/runs/gnn_b0.01_medium
 model:
   gnn_layers: 3
