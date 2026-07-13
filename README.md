@@ -1,20 +1,12 @@
 # FM4WiFi: Flow Matching for Multi-AP Coordination in Dense Deployments of Beyond Wi-Fi 8 Networks
 
-FM4WiFi generative ML pipeline for coordinated spatial reuse (Co-SR) in beyond Wi-Fi 8 multi-AP coordination (MAPC). Produces high-quality Co-SR configs (AP/station selection, MCS, tx power) in single inference step, sub-second for 30+ APs.
-
-## What it do
-
-Wi-Fi 8's MAPC limits coordination to AP pairs — not enough for dense deployments. Beyond Wi-Fi 8 needs network-wide Co-SR: APs transmit concurrently at reduced power, joint selection + config of AP-station transmissions. Prior methods scale bad (heavy signaling, slow convergence, unrealistic assumptions).
-
-FM4WiFi = 3 pieces:
+FM4WiFi generative ML pipeline for coordinated spatial reuse (Co-SR) in beyond Wi-Fi 8 multi-AP coordination (MAPC). Produces high-quality Co-SR configs (AP/station selection, MCS, tx power) in single inference step, sub-second for 30+ APs. FM4WiFi consists of 3 models:
 
 1. **Autoencoder (`graphs/`)** — GNN learns compact latent embeddings of network state (topology, RSSI, associations) from graph representation.
-2. **Flow matching model (`flow_matching/`)** — generative transformer+GNN synthesizes feasible Co-SR configs (AP/station selection, MCS, tx power) conditioned on latent state. Includes rate control, missing from prior work.
+2. **Flow matching model (`flow_matching/`)** — generative transformer + GNN synthesizes feasible Co-SR configs (AP/station selection, MCS, tx power) conditioned on latent state. Includes rate control, missing from prior work.
 3. **Surrogate rate predictor (`surrogate/`)** — lightweight GNN quantile regressor scores candidate configs fast, no live system / digital twin needed.
 
 Inference: encode recent network observations → FM model generates candidate configs → surrogate scores them → decode top-k into scheduling decisions.
-
-Matches/beats SOTA baselines at medium-large scales.
 
 ## Install
 
