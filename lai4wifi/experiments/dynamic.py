@@ -98,9 +98,6 @@ def run_scenario(
         rr_idx += 1
         eval_tx = config_pool[pool_idx]
 
-        if step % 150 == 0:
-            jax.clear_caches()
-
         scenario_key, eval_key = jax.random.split(scenario_key)
         if ideal_mcs:
             tx_mat, tx_power, _ = eval_tx

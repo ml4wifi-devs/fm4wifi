@@ -63,9 +63,6 @@ def run_h_mab_dynamic(env, n_steps, scenario_seed, seed):
             agent = create_agent(env.scenario.associations, seed)
             reward = 0.0
 
-        if step % 150 == 0:
-            jax.clear_caches()
-
         scenario_key, eval_key = jax.random.split(scenario_key)
 
         tx, tx_power = agent.sample(reward)

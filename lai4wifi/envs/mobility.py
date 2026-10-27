@@ -9,7 +9,7 @@ from mapc_research.envs.scenario_impl import random_scenario, residential_scenar
 from mapc_sim.constants import TAU
 from mapc_sim.sim import network_data_rate
 
-from lai4wifi.envs.scenarios import open_enterprise_scenario
+from lai4wifi.envs.scenarios import data_rate_fn, open_enterprise_scenario
 
 
 @dataclass
@@ -203,7 +203,7 @@ def create_mobile_eval_fn(scenario, mobility_state: MobilityState):
             tx_power = jnp.zeros_like(scenario.tx_power)
 
         with jax.default_device(jax.devices('cpu')[0]):
-            out = network_data_rate(
+            out = data_rate_fn(
                 key=key,
                 tx=tx,
                 pos=jnp.asarray(mobility_state.pos),

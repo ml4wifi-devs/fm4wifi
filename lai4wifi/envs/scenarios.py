@@ -6,6 +6,10 @@ from itertools import product
 import jax
 import jax.numpy as jnp
 from mapc_research.envs.scenario_impl import StaticScenario, random_scenario, residential_scenario
+from mapc_sim.sim import network_data_rate
+
+
+data_rate_fn = jax.jit(network_data_rate, static_argnames=('channel_width', 'return_internals', 'path_loss_fn'))
 
 
 def open_enterprise_scenario(
@@ -53,8 +57,6 @@ def create_scenario_eval_fn(scenario):
     if hasattr(scenario, 'switch_steps'):
         return scenario
 
-    data_rate_fn = jax.jit(scenario.data_rate_fn, static_argnames=('return_internals',))
-
     def eval_fn(key, tx, tx_power=None, mcs=None, return_internals=False):
         if tx_power is None:
             tx_power = jnp.zeros_like(scenario.tx_power)
@@ -62,9 +64,14 @@ def create_scenario_eval_fn(scenario):
         out = data_rate_fn(
             key,
             tx,
+            pos=scenario.pos,
             mcs=mcs,
             tx_power=scenario.tx_power - scenario.tx_power_delta * tx_power,
+            sigma=scenario.sigma,
+            walls=scenario.walls,
+            channel_width=scenario.channel_width,
             return_internals=return_internals,
+            path_loss_fn=scenario.path_loss_fn,
         )
 
         if return_internals:
