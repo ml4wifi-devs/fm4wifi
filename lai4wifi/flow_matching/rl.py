@@ -21,9 +21,16 @@ from tqdm import trange
 
 from lai4wifi.flow_matching.model import FlowMatching
 from lai4wifi.flow_matching.training import draw_t, noisy_example
-from lai4wifi.flow_matching.utils import connections_to_tx, jax_repeat, prepare_context, random_tx, tx_to_action, tx_to_jraph
+from lai4wifi.flow_matching.utils import jax_repeat
 from lai4wifi.graphs.model import GnnAutoencoder
 from lai4wifi.graphs.utils import make_batch, unbatch
+from lai4wifi.pipeline.conversion import (
+    connections_to_tx,
+    prepare_context,
+    random_tx,
+    tx_to_action,
+    tx_to_jraph
+)
 
 
 TRAIN_SCENARIOS = [

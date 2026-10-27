@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$(dirname "$0")/../dataset"
+
 echo "Running all dataset generation scripts..."
 
 echo "[1/4] Running random configurations generation..."

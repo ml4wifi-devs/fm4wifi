@@ -1,5 +1,7 @@
+from glob import glob
 from itertools import combinations
 
+import grain
 import jax
 import jax.numpy as jnp
 import jraph
@@ -7,6 +9,7 @@ import networkx as nx
 import numpy as np
 from mapc_sim.constants import DEFAULT_TX_POWER
 
+from lai4wifi.dataset.utils import load_dataset
 from lai4wifi.graphs.attributes import *
 
 
@@ -51,7 +54,7 @@ def nearest_power_of_two(n):
 
 
 def make_batch(graph_list, pad=True):
-    batch = jraph.batch(graph_list)
+    batch = jraph.batch_np(graph_list)
 
     if pad:
         pad_n_node = nearest_power_of_two(batch.n_node.sum() + 1)
@@ -64,7 +67,7 @@ def make_batch(graph_list, pad=True):
 
 def unbatch(batched_graph):
     graphs = jraph.unpad_with_graphs(batched_graph)
-    return jraph.unbatch(graphs)
+    return jraph.unbatch_np(graphs)
 
 
 def nx_to_jraph(G):
@@ -85,3 +88,41 @@ def nx_to_jraph(G):
 
 def clear_graph(x):
     return x._replace(nodes=jnp.empty((x.nodes.shape[0], 0), dtype=x.nodes.dtype), globals=None)
+
+
+class DataSource(grain.sources.RandomAccessDataSource):
+    def __init__(self, dataset_path, filter_fn=None):
+        if filter_fn is None:
+            filter_fn = lambda _: True
+            
+        paths = [p for p in glob(f'{dataset_path}/*.pkl.lz4')]
+        paths = list(filter(filter_fn, paths))
+        self._dataset = sum((load_dataset(p) for p in paths), start=[])
+        self._dataset = list(((config, item.scenario) for item in self._dataset for config in item.configurations))
+
+    def __len__(self):
+        return len(self._dataset)
+
+    def __getitem__(self, idx):
+        return self._dataset[idx]
+
+
+def default_map_fn(item):
+    graph, _ = item
+    return graph
+
+
+def create_data_loader(
+    dataset_path, batch_size, seed, 
+    filter_fn=None, map_fn=default_map_fn, batch_fn=make_batch, num_workers=0
+):
+    source = DataSource(dataset_path, filter_fn)
+    ds = grain.MapDataset.source(source)
+    ds = ds.seed(seed)
+    ds = ds.shuffle()
+    ds = ds.map(map_fn)
+    ds = ds.batch(batch_size, batch_fn=batch_fn)
+    ds = ds.repeat()
+    ds = ds.to_iter_dataset(grain.ReadOptions(num_threads=0))
+    ds = ds.mp_prefetch(grain.MultiprocessingOptions(num_workers, per_worker_buffer_size=16))
+    return ds

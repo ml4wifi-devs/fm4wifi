@@ -16,6 +16,7 @@ class SurrogateModel(nn.Module):
     n_components: int
     drop_rate: float
     dtype: jnp.dtype
+    mse: bool = False
 
     @nn.compact
     def __call__(self, x, training=True):
@@ -36,6 +37,10 @@ class SurrogateModel(nn.Module):
                 aggregate_nodes_for_globals_fn=segment_mean,
                 aggregate_edges_for_globals_fn=segment_mean
             )(x)
+
+        if self.mse:
+            x = jraph.GraphMapFeatures(embed_global_fn=make_embed_fn(1, self.dtype))(x)
+            return x.globals.squeeze(-1)
 
         x = jraph.GraphMapFeatures(embed_global_fn=make_embed_fn(self.n_components * 3, self.dtype))(x)
 

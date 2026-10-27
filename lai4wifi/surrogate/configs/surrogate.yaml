@@ -4,8 +4,8 @@ defaults:
   - optimizer: medium
   - train: base
 name: sur_medium
-dataset_path: '../graphs/datasets'
-gnn_path: '../graphs/runs/gnn_b0.01_medium'
+train_dataset_path: 'datasets/prebatched.pkl.lz4'
+val_dataset_path: 'datasets/prebatched_val.pkl.lz4'
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

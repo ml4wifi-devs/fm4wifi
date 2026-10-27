@@ -4,31 +4,13 @@ os.environ['JAX_PLATFORM_NAME'] = 'cpu'
 
 import jax
 import numpy as np
-from mapc_mab import MapcAgentFactory
-from reinforced_lib.agents.mab import UCB
 
+from lai4wifi.baselines.h_mab import create_agent
 from lai4wifi.dataset.utils import generate_dataset, Configuration, TxPair
 
 
-def to_python_dict(d):
-    result = {}
-    for k, v in d.items():
-        if hasattr(k, 'item'):
-            k = k.item()
-        result[k] = np.asarray(v).tolist()
-    return result
-
-
 def draw_configuration(n_configurations, key, dataset_item, n_steps=2000):
-    agent = MapcAgentFactory(
-        associations=to_python_dict(dataset_item.scenario.associations),
-        agent_type=UCB,
-        agent_params_lvl1={'c': 1.5, 'gamma': 0.5},
-        agent_params_lvl2={'c': 0.5, 'gamma': 0.5},
-        agent_params_lvl3={'c': 0.2, 'gamma': 0.8},
-        hierarchical=True,
-        seed=42
-    ).create_mapc_agent()
+    agent = create_agent(dataset_item.scenario.associations, 42)
     reward = 0.0
     tx_pairs = []
 

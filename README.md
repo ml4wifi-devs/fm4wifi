@@ -4,7 +4,7 @@ FM4WiFi generative ML pipeline for coordinated spatial reuse (Co-SR) in beyond W
 
 1. **Autoencoder (`graphs/`)** — GNN learns compact latent embeddings of network state (topology, RSSI, associations) from graph representation.
 2. **Flow matching model (`flow_matching/`)** — generative transformer + GNN synthesizes feasible Co-SR configs (AP/station selection, MCS, tx power) conditioned on latent state. Includes rate control, missing from prior work.
-3. **Surrogate rate predictor (`surrogate/`)** — lightweight GNN quantile regressor scores candidate configs fast, no live system / digital twin needed.
+3. **Surrogate rate predictor (`surrogate/`)** — GNN + transformer mixture density network scores candidate configs fast, no live system / digital twin needed.
 
 Inference: encode recent network observations → FM model generates candidate configs → surrogate scores them → decode top-k into scheduling decisions.
 
@@ -23,19 +23,25 @@ Key deps: JAX, Jraph (GNN), Flax, Optax, Hydra (configs), Weights & Biases (trac
 
 ```
 lai4wifi/
-├── dataset/       # scenario/network generation, baseline optimizers (f-optimal, t-optimal, h-MAB, random tx)
-├── graphs/        # GNN autoencoder — network state → latent embedding
-├── flow_matching/ # FM generative model, sim, MMD eval, RL fine-tuning
-├── surrogate/     # GNN quantile-regression throughput predictor
-└── baselines/     # baseline runner + analysis (baselines.py, analyze_baselines.py)
+├── dataset/        # training-data generation (random, H-MAB, F-/T-Optimal configurations)
+├── graphs/         # GNN autoencoder, graph representation, graph data loading
+├── flow_matching/  # FM model, training, training data (data.py), MMD, RL fine-tuning
+├── surrogate/      # MDN rate predictor: training, data from FM samples (data.py), evaluation (evaluate.py)
+├── pipeline/       # FM4WiFi inference: checkpoint loading, tx <-> graph conversion, candidate generation and scoring
+├── envs/           # evaluation scenarios and dynamic environments (mobility, joins, reassociation)
+├── experiments/    # FM4WiFi experiments: static, dynamic, inference benchmark
+├── baselines/      # F-/T-Optimal solvers, H-MAB (static and dynamic), DCF, result analysis
+└── scripts/        # shell scripts running the experiments
 ```
 
 Each stage depends on the previous checkpoint:
 
 ```
-graphs/training.py  →  graphs/runs/<name>/         (GNN encoder checkpoint)
-flow_matching/training.py  (loads gnn_path)  →  flow_matching/runs/<name>/
-surrogate/training.py      (loads gnn_path)  →  surrogate/runs/<name>/
+graphs/training.py         →  graphs/runs/<name>/          (GNN autoencoder)
+flow_matching/data.py      →  flow_matching/datasets/      (encoded configurations with contexts)
+flow_matching/training.py  →  flow_matching/runs/<name>/
+surrogate/data.py          →  surrogate/datasets/          (FM samples with simulated rates)
+surrogate/training.py      →  surrogate/runs/<name>/
 ```
 
 ## Training
@@ -44,8 +50,8 @@ Run from module directory, Hydra config overrides on command line:
 
 ```bash
 cd lai4wifi/graphs && python training.py
-cd lai4wifi/flow_matching && python training.py
-cd lai4wifi/surrogate && python training.py
+cd lai4wifi/flow_matching && python data.py context && python data.py prebatch && python training.py
+cd lai4wifi/surrogate && python data.py generate && python training.py
 
 # override config groups (model/optimizer/train each have tiny/small/medium/large + debug)
 python training.py model=large optimizer=large train=debug
@@ -55,13 +61,33 @@ Outputs land in `./runs/<name>/<date>/<time>/`.
 
 ## Simulation & evaluation
 
+Scenario sets (`scaling`, `residential`, `enterprise`, `random`) are defined in `envs/scenarios.py`.
+Experiments load `flow_matching/runs/fm_medium` and `surrogate/runs/sur_medium` by default and can be run from any directory:
+
 ```bash
-cd lai4wifi/flow_matching
-python sim.py           # scenario sim
-bash run_all_sim.sh     # batch sim runs
+python -m lai4wifi.experiments.static --scenarios residential    # static scenarios
+python -m lai4wifi.experiments.dynamic --env residential         # residential with mobility [--no_walls]
+python -m lai4wifi.experiments.dynamic --env random              # open space with mobility
+python -m lai4wifi.experiments.dynamic --env enterprise          # enterprise with joins and reassociations
+python -m lai4wifi.experiments.benchmark                         # inference timing
+python -m lai4wifi.baselines.static --scenarios residential      # F-/T-Optimal and H-MAB
+python -m lai4wifi.baselines.dynamic --env residential           # H-MAB in dynamic environments
 ```
 
-Baselines: `lai4wifi/baselines/baselines.py` (runner) + `analyze_baselines.py` (analysis); baseline optimizers themselves (`f_optimal.py`, `t_optimal.py`, `h_mab.py`, `random_tx.py`) live in `lai4wifi/dataset/`.
+Experiment scripts in `lai4wifi/scripts/` write their results to `results/`:
+
+```bash
+bash lai4wifi/scripts/generate_datasets.sh       # training datasets (random, H-MAB, F-/T-Optimal)
+bash lai4wifi/scripts/run_sim.sh                 # static experiments and inference timing
+bash lai4wifi/scripts/run_sim_dynamic.sh         # dynamic residential/random experiments
+bash lai4wifi/scripts/run_sim_dynamic_open.sh    # dynamic enterprise experiments
+bash lai4wifi/scripts/run_dcf.sh                 # DCF baseline
+bash lai4wifi/scripts/run_baselines.sh           # F-/T-Optimal and H-MAB on static scenarios
+bash lai4wifi/scripts/prebatch_surrogate.sh      # surrogate datasets
+bash lai4wifi/scripts/run_mdn_components.sh      # MDN components ablation
+bash lai4wifi/scripts/run_mdn_vs_mse.sh          # MDN vs MSE, AE vs raw ablation
+bash lai4wifi/scripts/run_risk_factor.sh         # risk factor ablation
+```
 
 ## Config system
 

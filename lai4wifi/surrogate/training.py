@@ -3,9 +3,8 @@ os.environ['XLA_FLAGS'] = '--xla_gpu_enable_triton_gemm=false'
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 os.environ['JAX_ENABLE_X64'] = 'True'
 
+import json
 import logging
-from dataclasses import replace
-from functools import partial
 
 import hydra
 import jax
@@ -16,49 +15,15 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.flow_matching.utils import create_data_loader
+from lai4wifi.dataset.utils import load_dataset
 from lai4wifi.surrogate.model import SurrogateModel
-from lai4wifi.surrogate.utils import RATE_MEAN, RATE_STD, calculate_data_rate
-from lai4wifi.graphs.model import GnnAutoencoder
-from lai4wifi.graphs.utils import make_batch
-
-
-def filter_fn_factory(val):
-    return lambda item: ('val' in item) == val
-
-
-def map_fn(item):
-    with jax.default_device(jax.devices('cpu')[0]):
-        graph, _ = item
-        rate = (calculate_data_rate(graph) - RATE_MEAN) / RATE_STD
-        graph = graph._replace(edges=replace(graph.edges, success=jnp.zeros_like(graph.edges.success)))
-        return graph, rate
-
-
-def batch_fn_factory(encode_fn):
-    def batch_fn(batch):
-        graphs, rates = zip(*batch)
-        graph = make_batch(graphs)
-        graph = encode_fn(graph)
-        return graph, jnp.asarray(list(rates) + [0.0])
-    return batch_fn
+from lai4wifi.surrogate.utils import evaluate_model
 
 
 @hydra.main(config_path='configs', config_name='surrogate', version_base=None)
 def main(cfg):
-    
-    def quantile_loss(predictions, targets, tau=0.9):
-        """aka pinball loss https://en.wikipedia.org/wiki/Quantile_regression"""
-        errors = targets - predictions
-        return jnp.where(errors < 0, (tau - 1) * errors, tau * errors)
-
-    def soft_quantile_loss(predictions, targets, tau=0.9, b=4.0):
-        """Soft approximation to quantile loss using squareplus function - this avoids transcendental functions"""
-        errors = targets - predictions
-        return ((2.0 * tau - 1.0) * errors + jnp.sqrt(errors ** 2 + b)) / 2.0
-
     @jax.jit
-    def loss_fn(params, key, batch, rates):
+    def mse_loss_fn(params, key, batch, rates):
         pred = model.apply(params, batch, rngs=key)
         mask = jraph.get_graph_padding_mask(batch)
         loss = optax.squared_error(pred, rates)
@@ -76,16 +41,18 @@ def main(cfg):
     def mdn_loss_fn(params, key, batch, rates):
         logits, means, scales = model.apply(params, batch, rngs=key)
         probs = jax.nn.softmax(logits, axis=-1)
-        expected_value = jnp.sum(probs * means, axis=-1)        
-        
+        expected_value = jnp.sum(probs * means, axis=-1)
+
         mask = jraph.get_graph_padding_mask(batch)
         loss = mdn_loss(logits, means, scales, rates)
         loss = (mask * loss).sum() / mask.sum()
         return loss, expected_value
 
+    loss_fn = mse_loss_fn if cfg.model.mse else mdn_loss_fn
+
     @jax.jit
     def step_fn(params, opt_state, key, batch, rates):
-        (loss, pred), grads = jax.value_and_grad(mdn_loss_fn, has_aux=True)(params, key, batch, rates)
+        (loss, pred), grads = jax.value_and_grad(loss_fn, has_aux=True)(params, key, batch, rates)
         updates, opt_state = optimizer.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss, pred
@@ -93,21 +60,12 @@ def main(cfg):
     key = jax.random.PRNGKey(cfg.train.seed)
     init_key, train_key, val_key = jax.random.split(key, 3)
 
-    gnn_cfg = OmegaConf.load(os.path.join(cfg.gnn_path, 'config.yaml'))
-    with ocp.CheckpointManager(os.path.abspath(cfg.gnn_path), item_names=['params']) as ckpt_manager:
-        gnn_params = ckpt_manager.restore(None, args=ocp.args.Composite(params=ocp.args.PyTreeRestore())).params
+    with jax.default_device(jax.devices('cpu')[0]):
+        data = load_dataset(cfg.train_dataset_path)
+        val_data = load_dataset(cfg.val_dataset_path)
 
-    gnn = GnnAutoencoder(**gnn_cfg.model)
-    encode_fn = jax.jit(partial(gnn.apply, gnn_params, method='encode'))
-
-    batch_fn = batch_fn_factory(encode_fn)
-    data = create_data_loader(
-        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=False), map_fn=map_fn, batch_fn=batch_fn
-    )
-    val_data = iter(create_data_loader(
-        cfg.dataset_path, cfg.train.batch_size, cfg.train.seed, filter_fn=filter_fn_factory(val=True), map_fn=map_fn, batch_fn=batch_fn
-    ))
-    sample = next(iter(data))[0]
+    val_idx = 0
+    sample = data[0][0]
 
     model = SurrogateModel(**cfg.model)
     params = model.init({'params': init_key}, sample)
@@ -130,7 +88,7 @@ def main(cfg):
 
     if cfg.train.log.type == 'wandb':
         wandb.init(project='lai4wifi', name=cfg.name)
-    
+
     for step, (batch, rates) in zip(range(cfg.train.n_steps), data):
         log_dict = {'step': step}
 
@@ -142,9 +100,9 @@ def main(cfg):
 
             for _ in range(cfg.train.val.n_steps):
                 val_key, subkey = jax.random.split(val_key)
-                val_batch, val_rates = next(val_data)
-                loss, pred = mdn_loss_fn(params, subkey, val_batch, val_rates)
-                val_loss += loss
+                val_batch, val_rates = val_data[val_idx]
+                val_idx = (val_idx + 1) % len(val_data)
+                val_loss += loss_fn(params, subkey, val_batch, val_rates)[0]
 
             log_dict['val/loss'] = val_loss / cfg.train.val.n_steps
 
@@ -164,6 +122,15 @@ def main(cfg):
 
     ckpt_manager.wait_until_finished()
     ckpt_manager.close()
+
+    metrics = evaluate_model(model, params, val_data)
+    logging.info(metrics)
+
+    with open(os.path.join(ckpt_path, 'eval_metrics.json'), 'w') as file:
+        json.dump(metrics, file, indent=2)
+
+    if cfg.train.log.type == 'wandb':
+        wandb.log({f'eval/{k}': v for k, v in metrics.items()})
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ from collections import defaultdict
 
 import numpy as np
 
-from lai4wifi.flow_matching.utils import TEST_SCENARIOS
+from lai4wifi.envs.scenarios import TEST_SCENARIOS
 
 
 def jains_fairness(rates):
@@ -90,7 +90,7 @@ def analyze_h_mab(agent_data, switch_steps):
     return {'splits': splits_analysis}
 
 
-def analyze(input_path):
+def analyze(input_path, scenarios):
     with open(input_path, 'r') as f:
         all_results = json.load(f)
 
@@ -98,7 +98,7 @@ def analyze(input_path):
 
     for i, scenario_results in enumerate(all_results):
         scenario_analysis = {}
-        scenario = TEST_SCENARIOS[i]
+        scenario = scenarios[i]
         switch_steps = getattr(scenario, 'switch_steps', [])
 
         for agent_data in scenario_results:
@@ -118,9 +118,15 @@ if __name__ == '__main__':
     args = ArgumentParser()
     args.add_argument('-i', '--input', type=str, default='baseline_results.json')
     args.add_argument('-o', '--output', type=str, default='baseline_analysis.json')
+    args.add_argument('--scenarios', type=str, choices=list(TEST_SCENARIOS), default='residential')
+    args.add_argument('--idx', type=int, default=None)
     args = args.parse_args()
 
-    analysis = analyze(args.input)
+    scenarios = TEST_SCENARIOS[args.scenarios]
+    if args.idx is not None:
+        scenarios = [scenarios[args.idx]]
+
+    analysis = analyze(args.input, scenarios)
 
     with open(args.output, 'w') as f:
         json.dump(analysis, f, indent=2)

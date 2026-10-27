@@ -15,8 +15,8 @@ import orbax.checkpoint as ocp
 import wandb
 from omegaconf import OmegaConf
 
-from lai4wifi.flow_matching.utils import create_data_loader
 from lai4wifi.graphs.model import GnnAutoencoder
+from lai4wifi.graphs.utils import create_data_loader
 
 
 @hydra.main(config_path="configs", config_name="gnn", version_base=None)

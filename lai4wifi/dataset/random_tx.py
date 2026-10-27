@@ -6,7 +6,7 @@ import jax
 import numpy as np
 
 from lai4wifi.dataset.utils import generate_dataset, Configuration, TxPair
-from lai4wifi.flow_matching.utils import random_tx
+from lai4wifi.pipeline.conversion import random_tx
 
 
 def draw_configuration(n_configurations, key, dataset_item):
