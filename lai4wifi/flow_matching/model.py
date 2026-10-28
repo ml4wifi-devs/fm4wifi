@@ -120,7 +120,7 @@ class FlowMatching(nn.Module):
     dtype: jnp.dtype
 
     @nn.compact
-    def __call__(self, x, t, training=True):
+    def __call__(self, x, t, training=True, cond=None):
         transformer_fn = lambda segment_ids: make_transformer(
             self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, segment_ids, training=training
         )
@@ -137,6 +137,9 @@ class FlowMatching(nn.Module):
         t = TimeEmbedding(x.edges.shape[-1], x.edges.shape[-1], self.drop_rate, self.dtype)(t, training=training)
         x = x._replace(edges=x.edges + t)
 
+        if cond is not None:
+            x = x._replace(edges=jnp.concatenate([x.edges, cond.astype(x.edges.dtype)], axis=-1))
+
         for _ in range(self.gnn_layers):
             x = jraph.GraphNetwork(
                 update_edge_fn=transformer_fn(edge_segment_ids),
@@ -150,14 +153,14 @@ class FlowMatching(nn.Module):
         x = jraph.GraphMapFeatures(embed_edge_fn=make_embed_fn(self.embed_features, self.dtype))(x)
         return x
 
-    def gen(self, context, n_steps=6):
+    def gen(self, context, n_steps=6, cond=None):
         def scan_fn(unet, x, t):
             cx = context._replace(
                 edges=jnp.concatenate([context.edges, x.edges[:, None]], axis=1),
                 nodes=jnp.concatenate([context.nodes, x.nodes[:, None]], axis=1),
                 globals=jnp.concatenate([context.globals, x.globals[:, None]], axis=1)
             )
-            v = unet(cx, t, training=False)
+            v = unet(cx, t, training=False, cond=cond)
             x = x._replace(edges=x.edges + v.edges / n_steps)
             return x, None
 

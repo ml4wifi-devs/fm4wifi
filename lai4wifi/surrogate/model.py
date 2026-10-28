@@ -19,7 +19,7 @@ class SurrogateModel(nn.Module):
     mse: bool = False
 
     @nn.compact
-    def __call__(self, x, training=True):
+    def __call__(self, x, training=True, cond=None):
         transformer_fn = lambda segment_ids: make_transformer(
             self.dim, self.ff_dim, self.n_layers, self.n_heads, self.drop_rate, self.dtype, segment_ids, training=training
         )
@@ -27,6 +27,9 @@ class SurrogateModel(nn.Module):
         edge_segment_ids = compute_segment_ids(x.n_edge, x.senders.shape[0])
         node_segment_ids = compute_segment_ids(x.n_node, x.nodes.shape[0])
         global_segment_ids = jnp.arange(x.n_node.shape[0])
+
+        if cond is not None:
+            x = x._replace(edges=jnp.concatenate([x.edges, cond.astype(x.edges.dtype)], axis=-1))
 
         for _ in range(self.gnn_layers):
             x = jraph.GraphNetwork(

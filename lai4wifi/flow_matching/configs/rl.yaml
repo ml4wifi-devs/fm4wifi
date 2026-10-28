@@ -2,8 +2,12 @@ defaults:
   - _self_
   - optimizer: rl
   - train: rl
-name: flow_matching_rl
-fm_path: 'runs/flow_matching_small'
+name: fm_rl
+fm_path: 'runs/fm_medium'
+surrogate_path: '../surrogate/runs/sur_medium'
+init_path: null
+scenarios:
+  - residential/0
 hydra:
   run:
     dir: ./runs/${name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

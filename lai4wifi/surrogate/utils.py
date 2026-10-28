@@ -12,6 +12,14 @@ RATE_MEAN = 657.2
 RATE_STD = 462.2
 
 
+def mdn_loss(logits, means, scales, rates):
+    """Mixture Density Network https://research.aston.ac.uk/en/publications/mixture-density-networks"""
+    log_probs_pi = jax.nn.log_softmax(logits, axis=-1)
+    log_probs_gauss = -0.5 * jnp.log(2 * jnp.pi) - jnp.log(scales) - 0.5 * ((rates[..., None] - means) / scales) ** 2
+    log_probs_total = log_probs_pi + log_probs_gauss
+    return -jax.nn.logsumexp(log_probs_total, axis=-1)
+
+
 def select_best_configuration(logits, means, scales, risk_averse=False, risk_factor=0.0):
     probs = jax.nn.softmax(logits, axis=-1)
     expected_value = jnp.sum(probs * means, axis=-1)

@@ -17,7 +17,7 @@ from omegaconf import OmegaConf
 
 from lai4wifi.dataset.utils import load_dataset
 from lai4wifi.surrogate.model import SurrogateModel
-from lai4wifi.surrogate.utils import evaluate_model
+from lai4wifi.surrogate.utils import evaluate_model, mdn_loss
 
 
 @hydra.main(config_path='configs', config_name='surrogate', version_base=None)
@@ -29,13 +29,6 @@ def main(cfg):
         loss = optax.squared_error(pred, rates)
         loss = (mask * loss).sum() / mask.sum()
         return loss, pred
-
-    def mdn_loss(logits, means, scales, rates):
-        """Mixture Density Network https://research.aston.ac.uk/en/publications/mixture-density-networks"""
-        log_probs_pi = jax.nn.log_softmax(logits, axis=-1)
-        log_probs_gauss = -0.5 * jnp.log(2 * jnp.pi) - jnp.log(scales) - 0.5 * ((rates[..., None] - means) / scales) ** 2
-        log_probs_total = log_probs_pi + log_probs_gauss
-        return -jax.nn.logsumexp(log_probs_total, axis=-1)
 
     @jax.jit
     def mdn_loss_fn(params, key, batch, rates):

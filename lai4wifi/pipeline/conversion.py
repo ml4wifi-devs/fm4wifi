@@ -119,6 +119,37 @@ def connections_to_tx(associations, key, graph, deterministic=False):
     return _connections_to_tx_jax(key, graph, ap_ids, sta_ids, n_stas, n_nodes, deterministic)
 
 
+def designate_station(key, graph, tx, tx_power, mcs, ap, sta, deterministic=False):
+    power_key, mcs_key = jax.random.split(key)
+    edge = jnp.argmax((graph.senders == ap) & (graph.receivers == sta))
+    power_logits, mcs_logits = graph.edges.tx_power[edge, :-1], graph.edges.mcs[edge, :-1]
+
+    if deterministic:
+        power_val, mcs_val = jnp.argmax(power_logits), jnp.argmax(mcs_logits)
+    else:
+        power_val, mcs_val = jax.random.categorical(power_key, power_logits), jax.random.categorical(mcs_key, mcs_logits)
+
+    tx = tx.at[ap].set(0).at[ap, sta].set(1)
+    tx_power = tx_power.at[ap].set(power_val)
+    mcs = mcs.at[ap].set(mcs_val)
+    return tx, tx_power, mcs
+
+
+def designate_stations(key, graph, tx, tx_power, mcs, aps, stas, deterministic=False):
+    def designate(carry, inputs):
+        key, ap, sta = inputs
+        return designate_station(key, graph, *carry, ap, sta, deterministic), None
+
+    keys = jax.random.split(key, aps.shape[0])
+    return jax.lax.scan(designate, (tx, tx_power, mcs), (keys, aps, stas))[0]
+
+
+def designated_edges(graph, aps, stas):
+    senders, receivers = graph.senders[:, None], graph.receivers[:, None]
+    pairs = ((senders == aps) & (receivers == stas)) | ((senders == stas) & (receivers == aps))
+    return pairs.any(axis=-1, keepdims=True).astype(float)
+
+
 def tx_to_action(associations, internals, tx_matrix, tx_power, mcs):
     return {
         ap: (sta, internals.average_data_rate[ap].item() / 1e6, tx_power[ap].item(), mcs[ap].item()) 

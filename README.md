@@ -59,6 +59,14 @@ python training.py model=large optimizer=large train=debug
 
 Outputs land in `./runs/<name>/<date>/<time>/`.
 
+RL fine-tuning of the FM model (DiffusionNFT) on a fixed topology, with online surrogate fine-tuning on the simulated rollouts. `n_designated` forces that many random stations (on distinct APs) into every configuration, which keeps top-k selection diverse:
+
+```bash
+cd lai4wifi/flow_matching && python rl.py 'scenarios=[residential/4]' train.n_designated=4 train.eval.selection=designated
+# evaluate a checkpoint only
+python rl.py 'scenarios=[residential/4]' train.n_designated=4 train.eval.selection=designated init_path=runs/<run> train.n_steps=0
+```
+
 ## Simulation & evaluation
 
 Scenario sets (`scaling`, `residential`, `enterprise`, `random`) are defined in `envs/scenarios.py`.

@@ -1,15 +1,41 @@
 ckpt:
-  intermediate: true
+  intermediate: false
   freq: 50
 log:
-  type: 'wandb'
+  type: 'none'
   freq: 1
+eval:
+  freq: 10
+  seed: 42
+  n_steps: 32
+  n_samples: 128
+  n_repeats: 5
+  top_ks: [1, 8, 32, 128]
+  selection: top
+  coverage_ratio: 1.0
+rollout:
+  n_contexts: 256
+  n_groups: 32
+  group_size: 16
+  n_sim_repeats: 1
+  chunk_size: 512
+  sim_chunk_size: 4096
+  gen_steps: 6
+  deterministic: false
+  dtype: float32
 nft:
-  n_examples: 2048
-  n_samples: 256
-  batch_size: 64
-  beta: 0.5
-gen:
-  n_steps: 3
-n_steps: 500
+  beta: 1.0
+  adv_clip: 5.0
+  kl_coef: 0.0001
+  eta_rate: 0.001
+  eta_max: 0.5
+  n_epochs: 1
+  minibatch_size: 128
+  dtype: float32
+n_designated: 0
+surrogate:
+  n_epochs: 4
+  dtype: float32
+  learning_rate: 0.0003
+n_steps: 300
 seed: 42

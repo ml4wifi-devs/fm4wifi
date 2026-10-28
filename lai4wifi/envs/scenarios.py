@@ -1,6 +1,7 @@
 import os
 os.environ['JAX_ENABLE_X64'] = 'True'
 
+from functools import partial
 from itertools import product
 
 import jax
@@ -10,6 +11,14 @@ from mapc_sim.sim import network_data_rate
 
 
 data_rate_fn = jax.jit(network_data_rate, static_argnames=('channel_width', 'return_internals', 'path_loss_fn'))
+
+
+@partial(jax.jit, static_argnames=('channel_width', 'path_loss_fn'))
+def batch_data_rate_fn(keys, tx, mcs, tx_power, pos, sigma, walls, channel_width, path_loss_fn):
+    def single(key, tx, mcs, tx_power):
+        return network_data_rate(key, tx, pos, mcs, tx_power, sigma, walls, channel_width, path_loss_fn=path_loss_fn)
+
+    return jax.vmap(single)(keys, tx, mcs, tx_power)
 
 
 def open_enterprise_scenario(
@@ -81,6 +90,23 @@ def create_scenario_eval_fn(scenario):
 
         reward = thr / scenario.normalize_reward
         return thr, reward, *internals
+
+    return eval_fn
+
+
+def create_scenario_batch_eval_fn(scenario):
+    def eval_fn(keys, tx, tx_power, mcs):
+        return batch_data_rate_fn(
+            keys,
+            tx,
+            mcs,
+            scenario.tx_power - scenario.tx_power_delta * tx_power,
+            pos=scenario.pos,
+            sigma=scenario.sigma,
+            walls=scenario.walls,
+            channel_width=scenario.channel_width,
+            path_loss_fn=scenario.path_loss_fn,
+        )
 
     return eval_fn
 
